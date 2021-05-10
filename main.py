@@ -148,6 +148,7 @@ def main():
     # Show all items in the database
     cur.execute('SELECT * FROM tblUsers ORDER BY pmkUsername')
     usernames = [e[0] for e in cur.fetchall()]
+    invalid_usernames = [u.lower() for u in usernames]
     print(f'Users in the database: {", ".join(usernames)}')
 
     # Build request
@@ -162,12 +163,14 @@ def main():
     for user in json.loads(response.text):
         if 'online' in user and user['online']:
             online_usernames.append(user['name'])
+            invalid_usernames.remove(user['name'].lower())
         else:
             offline_usernames.append(user['name'])
+            invalid_usernames.remove(user['name'].lower())
 
     print('Players online:', ', '.join(online_usernames))
     print('Players offline:', ', '.join(offline_usernames))
-    print('Invalid usernames:', ', '.join([u for u in usernames if u not in online_usernames and u not in offline_usernames]))
+    print('Invalid usernames:', ', '.join(invalid_usernames))
 
 def welcome():
     print('==================')

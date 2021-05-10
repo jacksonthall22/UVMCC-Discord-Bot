@@ -1,0 +1,6 @@
+__pycache__/
+*.lock
+*.toml
+.replit
+users.db
+_action_log.txt
