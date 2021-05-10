@@ -5,12 +5,11 @@ import re
 import requests
 import json
 import datetime
-# from collections import defaultdict
 import sqlite3
 import discord
 from discord.ext import commands
 import chess.pgn
-from keep_alive import keep_alive
+from secrets import TOKEN
 
 bot = commands.Bot(command_prefix='/')
 
@@ -19,10 +18,10 @@ USERS_DB_NAME = 'users.db'
 LICHESS_TABLE_NAME = 'tblUsers'
 CHESSCOM_TABLE_NAME = 'tblUsersChesscom'
 LOG_FILENAME = '_action_log.txt'
-EMBED_FOOTER = '♟  v1.0  ♟  I\'m a bot, beep boop  ♟  Code  ♟'
+EMBED_FOOTER = '♟  I\'m a bot, beep boop  ♟  Click my icon for the code  ♟  v1.0  ♟'
 
 DEBUG = True
-VERBOSE = False  # Shows more debug info, ex. for successful DB queries
+VERBOSE = True  # Shows more debug info, ex. for successful DB queries
 LOG = True
 
 ''' ========== Extra Functions ========== '''
@@ -241,7 +240,7 @@ async def remove(ctx, *args):
         not_in_chesscom_db = True
 
     if invalid_lichess_uname and invalid_chesscom_uname:
-        raise ValueError('error: placeholder')
+        raise ValueError('error: TODO - must handle once Chess.com usernames implemented')
 
 @bot.command(brief='Shows Lichess player statuses (Chess.com coming soon)')
 async def show(ctx):
@@ -254,9 +253,8 @@ async def show(ctx):
         # Build embedded message
         e = discord.Embed(title='Lichess Player Statuses')
         e.set_author(name=bot.user.name,
-                    url=LINK_TO_CODE,
-                    icon_url=bot.user.avatar_url)
-        e.set_footer(text=EMBED_FOOTER)
+                     url=LINK_TO_CODE,
+                     icon_url=bot.user.avatar_url)
 
         # Get all users in the database
         exit_code, db_response = db_query(USERS_DB_NAME, 'SELECT * FROM tblUsers ORDER BY pmkUsername')
@@ -277,11 +275,12 @@ async def show(ctx):
         lichess_playing = {}
         lichess_active = []
         lichess_offline = []
+        featured_game_desc: str = ''  # Will get prepended to embed footer
         for user in response_items:
             if 'playing' in user and user['playing']:
                 # Get current game's PGN
                 game_pgn_str = requests.get(f'https://lichess.org/api/user/{user["name"]}/current-game', params={'username': user['name']}).text
-                
+
                 # Create a Game object to parse
                 game_obj = chess.pgn.read_game(io.StringIO(game_pgn_str))
                 board = game_obj.board()
@@ -306,11 +305,13 @@ async def show(ctx):
                     orientation = 'black'
                 else:
                     raise ValueError(f'Error: Neither white nor black are use "{user["name"]}". White is {game_obj.headers["White"]}, Black is {game_obj.headers["Black"]}')
+                # Also create string that will be prepended to embed footer string (end of func)
+                featured_game_desc = f'{game_obj.headers["White"]} ({game_obj.headers["WhiteElo"]}) - {game_obj.headers["Black"]} ({game_obj.headers["BlackElo"]}) on Lichess\n\n'
                 # Truncate FEN after first space to insert in URL
                 game_fen_trunc = game_fen[:game_fen.find(' ')]
-                # Build the URL
+                # Compose the URL
                 img_url = f'https://backscattering.de/web-boardimage/board.png?fen={game_fen_trunc}&lastMove={last_move}&orientation={orientation}'
-                
+
                 # Finally update the dict
                 lichess_playing[user['name']] = {
                     'fen': game_fen,
@@ -355,13 +356,14 @@ async def show(ctx):
                 lines.append(f'**`{u}`**')
             e.add_field(name='Offline  💤', value='\n'.join(lines), inline=False)
         
+        # Embed Footer
+        e.set_footer(text=featured_game_desc+EMBED_FOOTER)
 
         # Send the final message
         await ctx.channel.send(embed=e)
         
         # Include so bot typing animation does not continue long after await ^
-        ptest('pass')
+        # TODO - not sure if this does anything or if the animation problem can be fixed...
+        # ptest('pass')
 
-keep_alive()
-ptest(os.getenv('TOKEN'))
-bot.run(os.getenv('TOKEN'))
+bot.run(TOKEN)
