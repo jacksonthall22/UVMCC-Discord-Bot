@@ -5,7 +5,7 @@ import re
 import requests
 import json
 import datetime
-import sqlite3
+import aiosqlite
 import discord
 from discord.ext import commands
 import chess.pgn
@@ -46,12 +46,16 @@ def log(s, filename = LOG_FILENAME):
     with open(filename, 'a') as f:
         f.write(f'{str(datetime.datetime.now())} {s}'.strip() + '\n')
 
-def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbose=VERBOSE):
+async def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbose=VERBOSE):
     """ Connect with the given sqlite3 database and execute a query. Return an exit code and cur.fetchall() for the command. """
-    
     # Open connection
-    con = sqlite3.connect(db_name)
-    cur = con.cursor()
+    con = await aiosqlite.connect(db_name)
+    cur = await con.cursor()
+
+    print('\nBefore:\n-------\n')
+    async with con:
+        await cur.execute("SELECT * FROM tblUsers")
+        print(await cur.fetchall())
 
     # Track success of query execution
     exit_code = 0
@@ -61,24 +65,36 @@ def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbos
     # Try executing query with parameters
     try:
         if params is not None:
-            cur.execute(query, params)
+            await cur.execute(query, params)
         else:
-            cur.execute(query)
+            await cur.execute(query)
 
-        con.commit()
-        query_result = cur.fetchall()
+        await con.commit()
+        query_result = await cur.fetchall()
     except sqlite3.IntegrityError as e:
         # Integrity error can happen if inserting duplicate primary key
+        # TODO - and other strange reasons
         err = e
         exit_code = 2
-        query_result = None
+    except sqlite3.ProgrammingError as e:
+        err = e
+        exit_code = 3
+    except sqlite3.OperationalError as e:
+        err = e
+        exit_code = 4
+    except sqlite3.NotSupportedError as e:
+        err = e
+        exit_code = 5
+    except sqlite3.DatabaseError as e:
+        # All the previous errs ^ are subclasses of DatabaseError
+        err = e
+        exit_code = 6
     except Exception as e:
         # Fall-through to default error code of 1
         err = e
         exit_code = 1
-        query_result = None
-    finally:
-        con.close()
+    # finally:
+        # con.close()
     
     # Print error message and/or build log_str
     log_str = f'db_query(db_name={db_name},query={query},params={params}) called'
@@ -88,12 +104,21 @@ def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbos
         log_str += '\nQuery succeeded'
     else:
         if DEBUG:
-            print(f'Error: couldn\'t  execute query `{query}` in database {db_name}')
+            print(f'Error ({exit_code}): couldn\'t execute query `{query}` {("with params " + str(params) + " ", "")[params is None]}in database {db_name}')
             print('Stack trace:\n', err)
+            # raise err
         log_str += f'\nQuery failed with exit code 1. Stack trace:\n{err}'
     
     if LOG:
         log(log_str)
+
+    print('\nAfter:\n------\n')
+    async with con:
+        await cur.execute("SELECT * FROM tblUsers")
+        print(await cur.fetchall())
+    print('\n\n')
+
+    await con.close()
 
     return exit_code, query_result
 
@@ -171,15 +196,19 @@ async def add(ctx, *args):
         # Response will give correct capitalization of username
         username_proper_caps = response[0]['name']
 
+        ec, r = db_query(USERS_DB_NAME, 'SELECT pmkUsername FROM tblUsers WHERE pmkUsername = ?', (username_proper_caps,))
+
+        ptest('ec, r', ec, r)
+        if r:
+            await ctx.channel.send('That name is already in the Lichess database.')
+            return
+
         # Execute insertion
         exit_code, response = db_query(USERS_DB_NAME, 'INSERT INTO tblUsers VALUES (?)', (username_proper_caps,))
 
         # Respond accordingly given nonzero exit code
-        if exit_code == 2:
-            await ctx.channel.send('That name is already in the Lichess database!')
-            return
-        elif exit_code != 0:
-            await ctx.channel.send('There was an error inserting the username into the database. DM @Cubigami and it can be added manually.')
+        if exit_code != 0:
+            await ctx.channel.send(f'There was an error inserting the username into the database (exit_code={exit_code}). DM @Cubigami and it can be added manually.')
             return
         
         # Send success message given exit code 0
@@ -223,12 +252,10 @@ async def remove(ctx, *args):
             username_proper_caps = response[0]['name']
 
             # Execute insertion
-            exit_code, response = db_query(USERS_DB_NAME, 'DELETE FROM tblUsers WHERE LOWER(pmkUsername) LIKE LOWER(?)', (username_proper_caps,))
+            exit_code, response = db_query(USERS_DB_NAME, 'DELETE FROM tblUsers WHERE pmkUsername = ?', (username_proper_caps,))
 
             # Respond accordingly given nonzero exit code
-            if exit_code == 2:
-                raise AssertionError('Didn\'t expect exit_code == 2 in remove()')
-            elif exit_code != 0:
+            if exit_code != 0:
                 await ctx.channel.send(f'There was an error removing {username_proper_caps} from the database. DM @Cubigami and it can be removed manually.')
                 return
             
