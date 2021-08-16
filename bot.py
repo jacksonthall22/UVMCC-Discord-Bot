@@ -97,39 +97,6 @@ def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbos
 
     return exit_code, query_result
 
-def pgn_to_dict(pgn_str: str, site: str = 'lichess', get_fen=False):
-    """
-        NOTE: This shouldn't be necessary given the `chess.pgn` module.
-
-        Take a PGN-formatted string and return a dict d that looks like this:
-        d = {
-            'tags': {
-                'White': 'Cubigami',
-                'Black': 'OtherPlayer',
-                etc...
-            },
-            'moves': ['e4', 'e5', 'Ke2'],
-            # If get_fen
-            'fen': [rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPPKPPP/RNBQ1BNR b kq - 1 2]
-        }
-    """
-    # PGN output might be different for chess.com - TODO
-    if site == 'lichess':
-        pass
-    elif site == 'chesscom':
-        pass
-    else:
-        raise ValueError(f'Error: Invalid `site` "{site}" in pgn_to_dict()')
-    
-    pgn_tags = {k: v for k, v in re.findall('\[(.*?) "(.*?)"\]', pgn_str)}
-    # Take out tags, annotations, and result or * at end of moves list
-    moves_str = re.sub('\{.*?\} |\[(.*?) "(.*?)"\]\n*|1-0|0-1|1\/2-1\/2|\d\.\.\. |\*', '', pgn_str).strip()
-
-    moves = re.findall('\d+\. (.*?) (.*?) |\d+\. (.*)', moves_str)
-    
-    pgn_tags.update({'moves': moves})
-    return pgn_tags
-
 
 ''' ========== Commands ========== '''
 
