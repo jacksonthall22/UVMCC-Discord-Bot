@@ -9,7 +9,13 @@ import sqlite3
 import discord
 from discord.ext import commands
 import chess.pgn
-from secrets import TOKEN
+from dotenv import load_dotenv
+
+from icecream import ic
+
+load_dotenv()
+
+TOKEN = os.getenv('DISCORD_TOKEN')
 
 bot = commands.Bot(command_prefix='/')
 
@@ -125,7 +131,8 @@ async def add(ctx, *args):
         args = [args[0], 'lichess']
 
     if len(args) != 2 or args[1].lower() not in ['lichess', 'chess.com']:
-        await ctx.channel.send('Usage: `/add <username> <lichess / chess.com>`')
+        # await ctx.channel.send('Usage: `/add <username> <lichess / chess.com>`')
+        await ctx.channel.send('Usage: `/add <username>`')
         return
     
     # Get given username and site the username applies to
@@ -186,7 +193,7 @@ async def remove(ctx, *args):
     not_in_chesscom_db = False
 
     if site in ('lichess', None):
-        response = json.loads(requests.get("https://lichess.org/api/users/status", params={'ids': username}).text)
+        response = json.loads(requests.get('https://lichess.org/api/users/status', params={'ids': username}).text)
 
         if not response:
             # No users in response -> not a valid username
@@ -219,8 +226,8 @@ async def remove(ctx, *args):
 @bot.command(brief='Shows Lichess player statuses (Chess.com coming soon)')
 async def show(ctx):
     """ 
-        Shows a formatted list of all users in the database and their 
-        current Lichess/Chess.com status (playing/active/offline)
+    Shows a formatted list of all users in the database and their 
+    current Lichess/Chess.com status (playing/active/offline)
     """
 
     async with ctx.channel.typing():
