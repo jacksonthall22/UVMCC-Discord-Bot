@@ -3,5 +3,7 @@ __pycache__/
 *.toml
 .replit
 secrets.*
+.env
 users.db
 _action_log.txt
+*token*
