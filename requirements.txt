@@ -1,0 +1,4 @@
+chess==1.6.1
+discord==1.7.3
+pyperclip=1.8.2
+requests==2.25.1
