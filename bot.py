@@ -35,16 +35,19 @@ def test(*args):
             new_args.append(a)
     return 'test: ' + ' '.join([str(a) for a in new_args]).rstrip(':')
 
-def ptest(*args):
 
+def ptest(*args):
     print(test(*args))
+
 
 async def mtest(ctx, *args):
     await ctx.channel.send(test(*args))
 
+
 def log(s, filename = LOG_FILENAME):
     with open(filename, 'a') as f:
         f.write(f'{str(datetime.datetime.now())} {s}'.strip() + '\n')
+
 
 def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbose=VERBOSE):
     """ Connect with the given sqlite3 database and execute a query. Return an exit code and cur.fetchall() for the command. """
@@ -108,11 +111,13 @@ async def on_ready():
         log(logged_in)
     db_query(USERS_DB_NAME, 'CREATE TABLE IF NOT EXISTS tblUsers (pmkUsername TEXT PRIMARY KEY)', )
 
+
 @bot.command(brief='Says hello')
 async def hello(ctx):
     await ctx.channel.send('Hello!')
     if VERBOSE:
         print('`hello()` run!')
+
 
 @bot.command(brief='Add a username to names in /show')
 async def add(ctx, *args):
@@ -153,6 +158,7 @@ async def add(ctx, *args):
         await ctx.channel.send(f'Added `{username_proper_caps}` to the Lichess database. Use /show to see who\'s online!')
     elif site == 'chess.com':
         await ctx.channel.send('Chess.com is not currently supported, but it will be soon!')
+
 
 @bot.command(brief='Remove a username from names in /show')
 async def remove(ctx, *args):
@@ -208,6 +214,7 @@ async def remove(ctx, *args):
 
     if invalid_lichess_uname and invalid_chesscom_uname:
         raise ValueError('error: TODO - must handle once Chess.com usernames implemented')
+
 
 @bot.command(brief='Shows Lichess player statuses (Chess.com coming soon)')
 async def show(ctx):
@@ -332,5 +339,6 @@ async def show(ctx):
         # Include so bot typing animation does not continue long after await ^
         # TODO - not sure if this does anything or if the animation problem can be fixed...
         # ptest('pass')
+
 
 bot.run(TOKEN)
