@@ -1,4 +1,6 @@
 chess==1.6.1
 discord==1.7.3
-pyperclip=1.8.2
+pyperclip==1.8.2
 requests==2.25.1
+python-dotenv>=0.19
+icecream>=2.1.1
