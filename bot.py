@@ -167,119 +167,6 @@ async def add(ctx, *args):
         await ctx.channel.send('Chess.com is not currently supported, but it will be soon!')
 
 
-@bot.command(brief='Generate a Lichess game link that any two players can join (default 10+5)')
-async def play(ctx, *args):
-    async with ctx.channel.typing():
-        # Sent when weeding out badly formatted commands
-        USAGE = 'Usage: `/play [<min>+<sec>] [rated]`'
-        
-        # Set default time format if none is specified
-        DEFAULT_TIME_FORMAT = '10+5'
-        DEFAULT_RATED = 'casual'
-        if not args:
-            time_format = DEFAULT_TIME_FORMAT
-            rated = DEFAULT_RATED
-        elif len(args) == 1:
-            if args[0] in ('rated', 'casual'):
-                time_format = DEFAULT_TIME_FORMAT
-                rated = args[0].strip()
-            else:
-                time_format = args[0].strip()
-                rated = DEFAULT_RATED
-        elif len(args) == 2:
-            time_format, rated = args
-        else:
-            await ctx.channel.send(USAGE)
-            return
-        
-        if rated.lower() not in ('rated', 'casual'):
-            await ctx.channel.send(USAGE)
-            return
-        
-        if '+' not in time_format or time_format == '0+0':
-            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
-            return
-        
-        minutes, seconds = time_format.split('+')
-        fraction_formats = {
-            '1/4': 15,
-            '1/2': 30,
-            '3/4': 45
-        }
-        if '/' in seconds \
-                or ('/' in minutes and minutes not in fraction_formats) \
-                or ('/' not in minutes and not re.match('^[0-9]{0,3}\+[0-9]{1,3}$', time_format.strip())):
-            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
-            return
-
-        # Time format parts: clock_limit+clock_inc
-        clock_limit = None
-        clock_inc = None
-        # Convert minutes to clock_limit
-        if '/' in minutes:
-            clock_limit = fraction_formats[minutes]
-        else:
-            try:
-                clock_limit = int(minutes) * 60
-            except ValueError:
-                await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
-                return
-        # Convert seconds to clock_inc
-        try:
-            clock_inc = int(seconds)
-        except ValueError:
-            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
-            return
-
-        # Validate clock_limit, clock_inc
-        # https://lichess.org/api#operation/challengeOpen
-        if clock_limit > 10800 or clock_inc > 180:
-            await ctx.channel.send('Error: maximum time format is 180+180')
-            return
-        # elif clock_limit == 0 and clock_inc < 3:
-        #     # clock_inc = 3
-        #     ...  # TODO
-        
-        is_rated = rated.lower() == 'rated'
-
-        # Make POST request
-        post_data = {
-            'rated': ('false', 'true')[is_rated],
-            'clock.increment': clock_inc,
-            'clock.limit': clock_limit
-        }
-        ic(post_data)
-        response = json.loads(requests.post('https://lichess.org/api/challenge/open',
-                                            data=post_data).text)
-        ic(response)
-        
-        # Catch API errors
-        if 'error' in response:
-            await ctx.channel.send('Error: Lichess API could not generate a game link :(')
-            return
-
-        # Send embed message in chat
-        game_id = response['challenge']['id']
-        main_link = response['challenge']['url']
-        white_link = response['urlWhite']
-        black_link = response['urlBlack']
-        time_format_shown = response['challenge']['timeControl']['show']
-        
-        e = discord.Embed(title=f'Created game `{game_id}`: a {time_format_shown} {["casual", "rated"][is_rated]} challenge')
-        e.set_author(name=bot.user.name,
-                     url=LINK_TO_CODE,
-                     icon_url=bot.user.avatar_url)
-        lines = [
-            f'[As White]({white_link})',
-            f'[As Black]({black_link})',
-            f'[As Random]({main_link})'
-        ]
-        e.add_field(name='Play  ⚔', value='\n'.join(lines), inline=False)
-        e.set_footer(text=EMBED_FOOTER)
-        
-        await ctx.channel.send(embed=e)
-
-
 @bot.command(brief='Remove a username from names in /show')
 async def remove(ctx, *args):
     if len(args) == 2 and args[1].lower() not in ['lichess', 'chess.com']:
@@ -334,7 +221,6 @@ async def remove(ctx, *args):
 
     if invalid_lichess_uname and invalid_chesscom_uname:
         raise ValueError('error: TODO - must handle once Chess.com usernames implemented')
-
 
 @bot.command(brief='Shows Lichess player statuses (Chess.com coming soon)')
 async def show(ctx):
@@ -459,6 +345,119 @@ async def show(ctx):
         # Include so bot typing animation does not continue long after await ^
         # TODO - not sure if this does anything or if the animation problem can be fixed...
         # ptest('pass')
+
+
+@bot.command(brief='Generate a Lichess game link that any two players can join (default 10+5 casual)')
+async def play(ctx, *args):
+    async with ctx.channel.typing():
+        # Sent when weeding out badly formatted commands
+        USAGE = 'Usage: `/play [<min>+<sec>] [rated]`'
+        
+        # Set default time format if none is specified
+        DEFAULT_TIME_FORMAT = '10+5'
+        DEFAULT_RATED = 'casual'
+        if not args:
+            time_format = DEFAULT_TIME_FORMAT
+            rated = DEFAULT_RATED
+        elif len(args) == 1:
+            if args[0] in ('rated', 'casual'):
+                time_format = DEFAULT_TIME_FORMAT
+                rated = args[0].strip()
+            else:
+                time_format = args[0].strip()
+                rated = DEFAULT_RATED
+        elif len(args) == 2:
+            time_format, rated = args
+        else:
+            await ctx.channel.send(USAGE)
+            return
+        
+        if rated.lower() not in ('rated', 'casual'):
+            await ctx.channel.send(USAGE)
+            return
+        
+        if '+' not in time_format or time_format == '0+0':
+            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
+            return
+        
+        minutes, seconds = time_format.split('+')
+        fraction_formats = {
+            '1/4': 15,
+            '1/2': 30,
+            '3/4': 45
+        }
+        if '/' in seconds \
+                or ('/' in minutes and minutes not in fraction_formats) \
+                or ('/' not in minutes and not re.match('^[0-9]{0,3}\+[0-9]{1,3}$', time_format.strip())):
+            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
+            return
+
+        # Time format parts: clock_limit+clock_inc
+        clock_limit = None
+        clock_inc = None
+        # Convert minutes to clock_limit
+        if '/' in minutes:
+            clock_limit = fraction_formats[minutes]
+        else:
+            try:
+                clock_limit = int(minutes) * 60
+            except ValueError:
+                await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
+                return
+        # Convert seconds to clock_inc
+        try:
+            clock_inc = int(seconds)
+        except ValueError:
+            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
+            return
+
+        # Validate clock_limit, clock_inc
+        # https://lichess.org/api#operation/challengeOpen
+        if clock_limit > 10800 or clock_inc > 180:
+            await ctx.channel.send('Error: maximum time format is 180+180')
+            return
+        # elif clock_limit == 0 and clock_inc < 3:
+        #     # clock_inc = 3
+        #     ...  # TODO
+        
+        is_rated = rated.lower() == 'rated'
+
+        # Make POST request
+        post_data = {
+            'rated': ('false', 'true')[is_rated],
+            'clock.increment': clock_inc,
+            'clock.limit': clock_limit
+        }
+        ic(post_data)
+        response = json.loads(requests.post('https://lichess.org/api/challenge/open',
+                                            data=post_data).text)
+        ic(response)
+        
+        # Catch API errors
+        if 'error' in response:
+            await ctx.channel.send('Error: Lichess API could not generate a game link :(')
+            return
+
+        # Send embed message in chat
+        game_id = response['challenge']['id']
+        main_link = response['challenge']['url']
+        white_link = response['urlWhite']
+        black_link = response['urlBlack']
+        time_format_shown = response['challenge']['timeControl']['show']
+        
+        e = discord.Embed(title=f'Created game `{game_id}`: a {time_format_shown} {["casual", "rated"][is_rated]} challenge')
+        e.set_author(name=bot.user.name,
+                     url=LINK_TO_CODE,
+                     icon_url=bot.user.avatar_url)
+        lines = [
+            f'[As White]({white_link})',
+            f'[As Black]({black_link})',
+            f'[As Random]({main_link})'
+        ]
+        e.add_field(name='Play  ⚔', value='\n'.join(lines), inline=False)
+        e.set_footer(text=EMBED_FOOTER)
+        
+        await ctx.channel.send(embed=e)
 
 
 bot.run(TOKEN)
