@@ -10,7 +10,7 @@ This is the source code for UVMCC#6718 on Discord. Feel free to submit an issue 
 - `/help`: Shows a help message.
 
 ## Contribute
-If you'd like to contribute, let me know on Discord first. Adding commands is not too difficult if you are familiar with Python. If you are affiliated with the club, we can talk about getting you the bot's authentication token that will allow you to control the bot via [Discord's API](https://discord.com/developers/docs/intro).
+If you'd like to contribute, let me know on Discord first. Adding commands is not too difficult if you are familiar with Python. If you are affiliated with the club, we can talk about getting you the bot's authentication token that will allow you to control it via [Discord's API](https://discord.com/developers/docs/intro).
 
 After you've done that, use git to manage your changes. If you've never used git before, here's a rundown:
 1. Clone this repo: `git clone https://github.com/jacksonthall22/UVMCC-Discord-Bot.git`
