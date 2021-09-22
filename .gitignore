@@ -1,6 +1,4 @@
 __pycache__/
-*.lock
-*.toml
 .replit
 secrets.*
 .env
