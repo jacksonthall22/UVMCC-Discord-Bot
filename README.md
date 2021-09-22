@@ -12,7 +12,7 @@ This is the source code for UVMCC#6718 on Discord. Feel free to submit an issue 
 ## Contribute
 If you'd like to contribute, let me know on Discord first. Adding commands is not too difficult if you are familiar with Python. If you are affiliated with the club, we can talk about getting you the bot's authentication token that will allow you to control it via [Discord's API](https://discord.com/developers/docs/intro).
 
-After you've done that, use git to manage your changes. If you've never used git before, here's a rundown:
+After you've done that, download the code and use git to manage your changes. If you've never used git before, here's a rundown:
 1. Clone this repo: `git clone https://github.com/jacksonthall22/UVMCC-Discord-Bot.git`
 1. Make a new local branch off of `main` and give it some descriptive name for what you will be working on, like `puzzles-command`: `git checkout -b <branch-name>`
 1. When you're ready to commit, stage your changes. You can stage specific files to be committed with `git add file.txt` or add all modified files with `git add -A`. If you've made a lot of changes without committing, it's good practice to stage and commit the files separately (unless the new code in some of those files relies on each other - then try to commit them together so code remains functional throughout the branch's commit history).
