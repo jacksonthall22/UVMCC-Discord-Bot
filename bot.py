@@ -428,10 +428,8 @@ async def play(ctx, *args):
             'clock.increment': clock_inc,
             'clock.limit': clock_limit
         }
-        ic(post_data)
         response = json.loads(requests.post('https://lichess.org/api/challenge/open',
                                             data=post_data).text)
-        ic(response)
         
         # Catch API errors
         if 'error' in response:
@@ -444,7 +442,6 @@ async def play(ctx, *args):
         white_link = response['urlWhite']
         black_link = response['urlBlack']
         time_format_shown = response['challenge']['timeControl']['show']
-        
         e = discord.Embed(title=f'Created game `{game_id}`: a {time_format_shown} {["casual", "rated"][is_rated]} challenge')
         e.set_author(name=bot.user.name,
                      url=LINK_TO_CODE,
