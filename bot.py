@@ -122,28 +122,57 @@ async def on_ready():
 @bot.command(brief='Connect your Discord ID to a Lichess username so you can use `/show me`')
 async def iam(ctx, *args):
     """ Let a user associate a lichess or chess.com username with their Discord ID. """
+    # Note: Not fully functional if 2 users have the same username on different sites.
 
-    if len(args) != 1:
-        await ctx.channel.send('Usage: `/iam <username>`')
-        return
-    username = args[0]
+    with ctx.channel.typing():
+        if len(args) != 1:
+            await ctx.channel.send('Usage: `/iam <username>`')
+            return
+        username = args[0]
 
-    # Make sure username is in the database
-    # TODO just call add() manually first?
-    _, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames WHERE username LIKE ?', params=args)
-    if not result:
-        await ctx.channel.send(f'`{username}` isn\'t in the database. Use `/add {username}` to add them first.')
-        return
+        # Make sure username is in the database
+        _, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames WHERE username LIKE ?', params=args)
+        if not result:
+            await ctx.channel.send(f'`{username}` isn\'t in the database. Use `/add {username}` to add them first.')
+            return
 
-    # Update the discord_id for the username
-    discord_id = str(ctx.message.author)
-    username = result[0][0]  # Gets proper caps
-    code, _ = db_query(DB_FILENAME, 'UPDATE ChessUsernames SET discord_id = ? WHERE username = ?', params=(discord_id, username))
-    
-    if code == 0:
-        await ctx.channel.send(f'Associated {username} with {discord_id}.')
-    else:
-        await ctx.channel.send(f'A database error occurred. DM @Cubigami and it can be resolved manually.')
+        # Update the discord_id for the username
+        discord_id = str(ctx.message.author)
+        username = result[0][0]  # Has proper caps
+        code, _ = db_query(DB_FILENAME, 'UPDATE ChessUsernames SET discord_id = ? WHERE username = ?', params=(discord_id, username))
+        
+        if code == 0:
+            await ctx.channel.send(f'Associated `{username}` with `{discord_id}`.')
+        else:
+            await ctx.channel.send(f'A database error occurred. DM @Cubigami and it can be resolved manually.')
+
+
+@bot.command(brief='Disconnect your Discord ID from a Lichess username.')
+async def iamnot(ctx, *args):
+    """ Remove association between a lichess or chess.com username and the user's Discord ID. """
+    # Note: Not fully functional if 2 users have the same username on different sites.
+
+    with ctx.channel.typing():
+        if len(args) != 1:
+            await ctx.channel.send('Usage: `/iamnot <username>`')
+            return
+        username = args[0]
+
+        # Make sure username is in the database
+        _, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames WHERE username LIKE ?', params=(username,))
+        if not result:
+            await ctx.channel.send(f'`{username}` isn\'t in the database.')
+            return
+
+        # Update the discord_id for the username
+        discord_id = str(ctx.message.author)
+        username = result[0][0]  # Has proper caps
+        code, _ = db_query(DB_FILENAME, 'UPDATE ChessUsernames SET discord_id = NULL WHERE username LIKE ?', params=(username,))
+        
+        if code == 0:
+            await ctx.channel.send(f'Removed link from `{username}` to `{discord_id}`.')
+        else:
+            await ctx.channel.send(f'A database error occurred. DM @Cubigami and it can be resolved manually.')
 
 
 @bot.command(brief='Says hello')
@@ -264,7 +293,7 @@ async def show(ctx, *args):
             if args[0].lower() == 'me':
                 code, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames WHERE discord_id = ?', params=(str(ctx.message.author),))
                 if not result:
-                    await ctx.channel.send('You have no usernames associated with your Discord account. '
+                    await ctx.channel.send('You have no Lichess or Chess.com usernames associated with your Discord account. '
                             'Use `/iam <username>` to add some.')
                     return
                 else:
