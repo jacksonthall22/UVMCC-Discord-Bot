@@ -2,6 +2,6 @@ __pycache__/
 .replit
 secrets.*
 .env
-users.db
+*.db
 _action_log.txt
 *token*
