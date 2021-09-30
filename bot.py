@@ -223,12 +223,11 @@ async def remove(ctx, *args):
         raise ValueError('error: TODO - must handle once Chess.com usernames implemented')
 
 @bot.command(brief='Shows Lichess player statuses (Chess.com coming soon)')
-async def show(ctx):
+async def show(ctx, *args):
     """ 
     Shows a formatted list of all users in the database and their 
     current Lichess/Chess.com status (playing/active/offline)
     """
-
     async with ctx.channel.typing():
         # Build embedded message
         e = discord.Embed(title='Lichess Player Statuses')
@@ -237,8 +236,15 @@ async def show(ctx):
                      icon_url=bot.user.avatar_url)
 
         # Get all users in the database
-        exit_code, db_response = db_query(USERS_DB_NAME, 'SELECT * FROM tblUsers ORDER BY pmkUsername')
-        usernames = [e[0] for e in list(db_response)]
+        if len(args) == 1:
+            exit_code, db_response = db_query(USERS_DB_NAME, 'SELECT pmkUsername FROM tblUsers WHERE pmkUsername LIKE ?', params=args)
+            usernames = list(args)
+        elif len(args) == 2:
+            await ctx.channel.send('Usage: `/show [<username>]`')
+            return
+        else:
+            exit_code, db_response = db_query(USERS_DB_NAME, 'SELECT pmkUsername FROM tblUsers ORDER BY pmkUsername')
+            usernames = [e[0] for e in list(db_response)]
 
         # Send request for all usernames - only valid usernames will be returned
         # (and valid ones will be returned with proper capitalization)
@@ -247,68 +253,72 @@ async def show(ctx):
 
         # Don't build full embed if no users were returned
         if not response_items:
-            e.add_field(name='No Players', value='There aren\'t any players in the Lichess database. Use /add to add your username!', inline=False)
+            if args:
+                e.add_field(name='Invalid username', value=f'`{args[0]}` isn\'t on Lichess.', inline=False)
+            else:
+                e.add_field(name='No Players', value='There aren\'t any players in the database. Use `/add` to add yourself!', inline=False)
             await ctx.channel.send(embed=e)
             return
 
         # Sort by username statuses
-        lichess_playing = {}
-        lichess_active = []
-        lichess_offline = []
+        lichess_playing = {}  # {username: {fen: "", game_url: ""}, ...}
+        lichess_active = []   # ["username", ...]
+        lichess_offline = []  # ["username", ...]
         featured_game_desc: str = ''  # Will get prepended to embed footer
+        featured_game_was_set: bool = False
         for user in response_items:
             if 'playing' in user and user['playing']:
-                # Get current game's PGN
+                # Add user to "playing" list
                 game_pgn_str = requests.get(f'https://lichess.org/api/user/{user["name"]}/current-game', params={'username': user['name']}).text
-
-                # Create a Game object to parse
                 game_obj = chess.pgn.read_game(io.StringIO(game_pgn_str))
-                board = game_obj.board()
-                
-                # Make moves to setup board to current state, and get last move
-                # (Will be 3 moves behind for anti-cheating according to Lichess API docs)
-                last_move = None
-                for move in game_obj.mainline_moves():
-                    board.push(move)
-                    last_move = move.uci()
-                game_fen = board.fen()
-
-                # Get current game's URL
                 game_url = game_obj.headers['Site']
-                
-                # Get URL to image of board
-                # Source: https://github.com/niklasf/web-boardimage
-                # First get orientation
-                if game_obj.headers['White'] == user['name']:
-                    orientation = 'white'
-                elif game_obj.headers['Black'] == user['name']:
-                    orientation = 'black'
-                else:
-                    raise ValueError(f'Error: Neither white nor black are use "{user["name"]}". White is {game_obj.headers["White"]}, Black is {game_obj.headers["Black"]}')
-                # Also create string that will be prepended to embed footer string (end of func)
-                featured_game_desc = f'{game_obj.headers["White"]} ({game_obj.headers["WhiteElo"]}) - {game_obj.headers["Black"]} ({game_obj.headers["BlackElo"]}) on Lichess\n\n'
-                # Truncate FEN after first space to insert in URL
-                game_fen_trunc = game_fen[:game_fen.find(' ')]
-                # Compose the URL
-                img_url = f'https://backscattering.de/web-boardimage/board.png?fen={game_fen_trunc}&lastMove={last_move}&orientation={orientation}'
+                lichess_playing[user['name']] = {'url': game_url}
 
-                # Finally update the dict
-                lichess_playing[user['name']] = {
-                    'fen': game_fen,
-                    'url': game_url,
-                    'img': img_url
-                }
+                # Choose first "playing" game found for the featured image: compose an img URL
+                # based on the FEN, user orientation, and last move for web-boardimage
+                # Source: https://github.com/niklasf/web-boardimage
+                if not featured_game_was_set:
+                    # Get FEN
+                    # Create a Game object to parse
+                    board = game_obj.board()
+                    # Make moves to setup board to current state, and save last move
+                    # (will be 3 moves behind for anti-cheating according to Lichess API docs)
+                    last_move = None
+                    for move in game_obj.mainline_moves():
+                        board.push(move)
+                        last_move = move.uci()
+                    game_fen = board.fen()
+
+                    # Get orientation
+                    if game_obj.headers['White'] == user['name']:
+                        orientation = 'white'
+                    else:
+                        orientation = 'black'
+                    
+                    # String that will be prepended to embed's footer (at end of function)
+                    featured_game_desc = f'{game_obj.headers["White"]} ({game_obj.headers["WhiteElo"]}) - {game_obj.headers["Black"]} ({game_obj.headers["BlackElo"]}) on Lichess\n\n'
+                    
+                    # Truncate FEN to just the board layout part
+                    game_fen_trunc = game_fen[:game_fen.find(' ')]
+                    
+                    # Set the URL
+                    img_url = f'https://backscattering.de/web-boardimage/board.png?fen={game_fen_trunc}&orientation={orientation}{"&lastMove="+last_move if last_move else ""}'
+                    lichess_playing[user['name']]['img'] = img_url
+                    featured_game_was_set = True
+
             elif 'online' in user and user['online']:
                 lichess_active.append(user['name'])
             else:
                 lichess_offline.append(user['name'])
 
-        # Lichess - Playing Now section
+        ''' Build the embed message '''
+
+        # Playing Now section
         if lichess_playing:
             lines = []
             has_image = False
             for u, dct in lichess_playing.items():
-                if not has_image:
+                if 'img' in dct:
                     img = dct['img']
                     has_image = True
                     shown_below = 'shown below - '
@@ -322,29 +332,25 @@ async def show(ctx):
             
             e.add_field(name='In Game  ⚔', value='\n'.join(lines), inline=False)
         
-        # Lichess - Active section
+        # Active section
         if lichess_active:
             lines = []
             for u in lichess_active:
                 lines.append(f'**`{u}`**: Active on Lichess')
             e.add_field(name='Active  ⚡', value='\n'.join(lines), inline=False)
         
-        # Lichess - Offline section
+        # Offline section
         if lichess_offline:
             lines = []
             for u in lichess_offline:
                 lines.append(f'**`{u}`**')
             e.add_field(name='Offline  💤', value='\n'.join(lines), inline=False)
         
-        # Embed Footer
+        # Footer
         e.set_footer(text=featured_game_desc+EMBED_FOOTER)
 
         # Send the final message
         await ctx.channel.send(embed=e)
-        
-        # Include so bot typing animation does not continue long after await ^
-        # TODO - not sure if this does anything or if the animation problem can be fixed...
-        # ptest('pass')
 
 
 @bot.command(brief='Generate a Lichess game link that any two players can join (default 10+5 casual)')
