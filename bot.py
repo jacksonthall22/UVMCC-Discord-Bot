@@ -19,7 +19,7 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 
 bot = commands.Bot(command_prefix='/')
 
-LINK_TO_CODE = 'https://replit.com/@jackson_hall/UVMCC-Discord-Bot'
+LINK_TO_CODE = 'https://github.com/jacksonthall22/UVMCC-Discord-Bot'
 USERS_DB_NAME = 'users.db'
 LICHESS_TABLE_NAME = 'tblUsers'
 CHESSCOM_TABLE_NAME = 'tblUsersChesscom'
