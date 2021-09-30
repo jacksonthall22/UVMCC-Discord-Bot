@@ -20,9 +20,7 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 bot = commands.Bot(command_prefix='/')
 
 LINK_TO_CODE = 'https://github.com/jacksonthall22/UVMCC-Discord-Bot'
-USERS_DB_NAME = 'users.db'
-LICHESS_TABLE_NAME = 'tblUsers'
-CHESSCOM_TABLE_NAME = 'tblUsersChesscom'
+DB_FILENAME = 'users.db'
 LOG_FILENAME = '_action_log.txt'
 EMBED_FOOTER = '♟  I\'m a bot, beep boop  ♟  Click my icon for the code  ♟  v1.0  ♟'
 
@@ -93,11 +91,11 @@ def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbos
     log_str = f'db_query(db_name={db_name},query={query},params={params}) called'
     if exit_code == 0:
         if DEBUG and VERBOSE:
-            print(f'Query `{query}` in database `{db_name}` {("with params " + str(params) + " ", "")[params is None]}succeeded')
+            print(f'Query `{query}` in database `{db_name}` with params {params} succeeded')
         log_str += '\nQuery succeeded'
     else:
         if DEBUG:
-            print(f'Error: couldn\'t  execute query `{query}` in database {db_name}')
+            print(f'Error: couldn\'t execute query `{query}` with params {params} in database {db_name}')
             print('Stack trace:\n', err)
         log_str += f'\nQuery failed with exit code 1. Stack trace:\n{err}'
     
@@ -115,7 +113,37 @@ async def on_ready():
     print(logged_in)
     if LOG:
         log(logged_in)
-    db_query(USERS_DB_NAME, 'CREATE TABLE IF NOT EXISTS tblUsers (pmkUsername TEXT PRIMARY KEY)', )
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS DiscordUsers (discord_id TEXT PRIMARY KEY)')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS ChessSites (site TEXT PRIMARY KEY COLLATE NOCASE)')
+    # db_query(DB_FILENAME, 'INSERT INTO ChessSites(site) VALUES ("lichess.org"), ("chess.com")')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS ChessUsernames (username TEXT PRIMARY KEY, discord_id TEXT, site TEXT, FOREIGN KEY(discord_id) REFERENCES DiscordUsers(discord_id), FOREIGN KEY(site) REFERENCES ChessSites(site))')
+
+
+@bot.command(brief='Connect your Discord ID to a Lichess username so you can use `/show me`')
+async def iam(ctx, *args):
+    """ Let a user associate a lichess or chess.com username with their Discord ID. """
+
+    if len(args) != 1:
+        await ctx.channel.send('Usage: `/iam <username>`')
+        return
+    username = args[0]
+
+    # Make sure username is in the database
+    # TODO just call add() manually first?
+    _, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames WHERE username LIKE ?', params=args)
+    if not result:
+        await ctx.channel.send(f'`{username}` isn\'t in the database. Use `/add {username}` to add them first.')
+        return
+
+    # Update the discord_id for the username
+    discord_id = str(ctx.message.author)
+    username = result[0][0]  # Gets proper caps
+    code, _ = db_query(DB_FILENAME, 'UPDATE ChessUsernames SET discord_id = ? WHERE username = ?', params=(discord_id, username))
+    
+    if code == 0:
+        await ctx.channel.send(f'Associated {username} with {discord_id}.')
+    else:
+        await ctx.channel.send(f'A database error occurred. DM @Cubigami and it can be resolved manually.')
 
 
 @bot.command(brief='Says hello')
@@ -130,9 +158,8 @@ async def add(ctx, *args):
     if len(args) == 1:
         args = [args[0], 'lichess']
 
-    if len(args) != 2 or args[1].lower() not in ['lichess', 'chess.com']:
-        # await ctx.channel.send('Usage: `/add <username> <lichess / chess.com>`')
-        await ctx.channel.send('Usage: `/add <username>`')
+    if len(args) != 2 or args[1].lower() not in ('lichess', 'chess.com'):
+        await ctx.channel.send('Usage: `/add <username> [lichess/chess.com]`')
         return
     
     # Get given username and site the username applies to
@@ -151,72 +178,69 @@ async def add(ctx, *args):
         username_proper_caps = response[0]['name']
 
         # Execute insertion
-        exit_code, response = db_query(USERS_DB_NAME, 'INSERT INTO tblUsers VALUES (?)', (username_proper_caps,))
+        db_query(DB_FILENAME, 'INSERT INTO DiscordUsers(username) VALUES (?)', params=(username_proper_caps,))
+        code, _ = db_query(DB_FILENAME, 'INSERT INTO ChessUsernames(username, site) VALUES (?, "lichess.org")', params=(username_proper_caps,))
 
-        # Respond accordingly given nonzero exit code
-        if exit_code == 2:
+        if code == 0:
+            await ctx.channel.send(f'Added `{username_proper_caps}` (Lichess) to the database. Use `/show` to see who\'s online!')
+        elif code == 2:
             await ctx.channel.send('That name is already in the Lichess database!')
-            return
-        elif exit_code != 0:
-            await ctx.channel.send('There was an error inserting the username into the database. DM @Cubigami and it can be added manually.')
-            return
-        
-        # Send success message given exit code 0
-        await ctx.channel.send(f'Added `{username_proper_caps}` to the Lichess database. Use /show to see who\'s online!')
+        else:
+            await ctx.channel.send('There was an error inserting your username into the database. DM @Cubigami and it can be added manually.')
     elif site == 'chess.com':
         await ctx.channel.send('Chess.com is not currently supported, but it will be soon!')
 
 
 @bot.command(brief='Remove a username from names in /show')
 async def remove(ctx, *args):
-    if len(args) == 2 and args[1].lower() not in ['lichess', 'chess.com']:
-        await ctx.channel.send('Usage: `/add <username> <lichess / chess.com>`')
+    if len(args) == 2 and args[1].lower() not in ('lichess', 'chess.com'):
+        await ctx.channel.send('Usage: `/remove <username> [lichess/chess.com]`')
         return
     elif len(args) not in (1, 2):
-        await ctx.channel.send('Usage: `/remove <username>[ <lichess / chess.com>]`')
+        await ctx.channel.send('Usage: `/remove <username> [lichess/chess.com]`')
         return
     
-    # Get given username and site the username applies to, if given
+    # Get username and site the username applies to (if given)
     args = [a.lower() for a in args]
 
-    # If site is None, remove username from both Lichess and Chess.com DBs
-    site = None
     if len(args) == 2:
         username, site = args
     else:
         username = args[0]
+        site = None
     
     # Handle differently depending on site
     invalid_lichess_uname = False
     invalid_chesscom_uname = False
-    not_in_lichess_db = False
-    not_in_chesscom_db = False
-
-    if site in ('lichess', None):
-        response = json.loads(requests.get('https://lichess.org/api/users/status', params={'ids': username}).text)
-
-        if not response:
-            # No users in response -> not a valid username
-            invalid_lichess_uname = True
-        else:
-            # Response will give correct capitalization of username
-            username_proper_caps = response[0]['name']
-
-            # Execute insertion
-            exit_code, response = db_query(USERS_DB_NAME, 'DELETE FROM tblUsers WHERE LOWER(pmkUsername) LIKE LOWER(?)', (username_proper_caps,))
-
-            # Respond accordingly given nonzero exit code
-            if exit_code == 2:
-                raise AssertionError('Didn\'t expect exit_code == 2 in remove()')
-            elif exit_code != 0:
-                await ctx.channel.send(f'There was an error removing {username_proper_caps} from the database. DM @Cubigami and it can be removed manually.')
-                return
-            
-            # Send success message given exit code 0
-            await ctx.channel.send(f'Removed `{username_proper_caps}` from the Lichess database.')
+    if site is None:
+        # If site not given, remove all instances of username in DB
+        await remove(ctx, username, 'lichess')
+        await remove(ctx, username, 'chess.com')
+        return
     
-    if site in ('chess.com', None):
-        invalid_chesscom_uname = True
+    if site.lower() =='lichess':
+        queried_site = site
+        if site == 'lichess':
+            queried_site = 'lichess.org'
+        _, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames WHERE username LIKE ? AND site LIKE ?', params=(username, queried_site))
+        
+        if not result:
+            # No users in DB result -> not a valid username
+            invalid_lichess_uname = True
+            await ctx.channel.send(f'`{username}` was not in the database.')
+        else:
+            # Remove the username
+            username_proper_caps = result[0][0]
+            code, result = db_query(DB_FILENAME, 'DELETE FROM ChessUsernames WHERE username = ? AND site = ?', params=(username_proper_caps, queried_site))
+
+            if code == 0:
+                await ctx.channel.send(f'Removed `{username_proper_caps}` (Lichess) from the database.')
+            else:
+                await ctx.channel.send(f'There was an error removing {username_proper_caps} from the database. DM @Cubigami and it can be removed manually.')
+            return
+
+    if site.lower() == 'chess.com':
+        invalid_chesscom_uname = True  # TODO
         not_in_chesscom_db = True
 
     if invalid_lichess_uname and invalid_chesscom_uname:
@@ -237,26 +261,34 @@ async def show(ctx, *args):
 
         # Get all users in the database
         if len(args) == 1:
-            exit_code, db_response = db_query(USERS_DB_NAME, 'SELECT pmkUsername FROM tblUsers WHERE pmkUsername LIKE ?', params=args)
-            usernames = list(args)
-        elif len(args) == 2:
+            if args[0].lower() == 'me':
+                code, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames WHERE discord_id = ?', params=(str(ctx.message.author),))
+                if not result:
+                    await ctx.channel.send('You have no usernames associated with your Discord account. '
+                            'Use `/iam <username>` to add some.')
+                    return
+                else:
+                    usernames = [e[0] for e in result]
+            else:
+                code, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames WHERE username LIKE ?', params=args)
+                usernames = args
+        elif len(args) >= 2:
             await ctx.channel.send('Usage: `/show [<username>]`')
             return
         else:
-            exit_code, db_response = db_query(USERS_DB_NAME, 'SELECT pmkUsername FROM tblUsers ORDER BY pmkUsername')
-            usernames = [e[0] for e in list(db_response)]
+            code, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames ORDER BY username')
+            usernames = [e[0] for e in result]
 
         # Send request for all usernames - only valid usernames will be returned
         # (and valid ones will be returned with proper capitalization)
-        response = requests.get("https://lichess.org/api/users/status", params={'ids': ','.join(usernames)})
-        response_items = json.loads(response.text)
+        response = json.loads(requests.get("https://lichess.org/api/users/status", params={'ids': ','.join(usernames)}).text)
 
         # Don't build full embed if no users were returned
-        if not response_items:
+        if not response:
             if args:
                 e.add_field(name='Invalid username', value=f'`{args[0]}` isn\'t on Lichess.', inline=False)
             else:
-                e.add_field(name='No Players', value='There aren\'t any players in the database. Use `/add` to add yourself!', inline=False)
+                e.add_field(name='No Players', value='There aren\'t any players in the database. Use `/add <username>` to add yourself!', inline=False)
             await ctx.channel.send(embed=e)
             return
 
@@ -266,7 +298,7 @@ async def show(ctx, *args):
         lichess_offline = []  # ["username", ...]
         featured_game_desc: str = ''  # Will get prepended to embed footer
         featured_game_was_set: bool = False
-        for user in response_items:
+        for user in response:
             if 'playing' in user and user['playing']:
                 # Add user to "playing" list
                 game_pgn_str = requests.get(f'https://lichess.org/api/user/{user["name"]}/current-game', params={'username': user['name']}).text
