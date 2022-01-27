@@ -59,7 +59,7 @@ def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbos
     Connect with the given sqlite3 database and execute a query. Return a
     custom exit code and cur.fetchall() for the command.
     """
-    
+
     # Open connection
     con = sqlite3.connect(db_name)
     cur = con.cursor()
@@ -82,15 +82,13 @@ def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbos
         # Integrity error can happen if inserting duplicate primary key
         err = e
         exit_code = 2
-        query_result = None
     except Exception as e:
         # Fall-through to default error code of 1
         err = e
         exit_code = 1
-        query_result = None
     finally:
         con.close()
-    
+
     # Print error message and/or build log_str
     log_str = f'db_query(db_name={db_name},query={query},params={params}) called'
     if exit_code == 0:
@@ -102,7 +100,7 @@ def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbos
             print(f'Error: couldn\'t execute query `{query}` with params {params} in database {db_name}')
             print('Stack trace:\n', err)
         log_str += f'\nQuery failed with exit code 1. Stack trace:\n{err}'
-    
+
     if LOG:
         log(log_str)
 
@@ -147,10 +145,10 @@ async def add(ctx, *args):
     if len(args) != 2 or args[1].lower() not in ('lichess', 'chess.com'):
         await ctx.channel.send('Usage: `/add <username> [lichess/chess.com]`')
         return
-    
+
     # Get given username and site the username applies to
     username, site = [a.lower() for a in args]
-    
+
     # Handle differently depending on site
     if site == 'lichess':
         response = json.loads(requests.get("https://lichess.org/api/users/status", params={'ids': username}).text)
@@ -159,7 +157,7 @@ async def add(ctx, *args):
             # No users in response -> not a valid username
             await ctx.channel.send(f'`{username}` wasn\'t found on Lichess.')
             return
-        
+
         # Response will give correct capitalization of username
         username_proper_caps = response[0]['name']
 
@@ -191,7 +189,7 @@ async def remove(ctx, *args):
     elif len(args) not in (1, 2):
         await ctx.channel.send('Usage: `/remove <username> [lichess/chess.com]`')
         return
-    
+
     # Get username and site the username applies to (if given)
     args = [a.lower() for a in args]
 
@@ -200,7 +198,7 @@ async def remove(ctx, *args):
     else:
         username = args[0]
         site = None
-    
+
     # Handle differently depending on site
     invalid_lichess_uname = False
     invalid_chesscom_uname = False
@@ -209,7 +207,7 @@ async def remove(ctx, *args):
         await remove(ctx, username, 'lichess')
         await remove(ctx, username, 'chess.com')
         return
-    
+
     if site.lower() =='lichess':
         queried_site = site
         if site == 'lichess':
@@ -217,7 +215,7 @@ async def remove(ctx, *args):
         _, result = db_query(DB_FILENAME,
                              'SELECT username FROM ChessUsernames WHERE username LIKE ? AND site LIKE ?',
                              params=(username, queried_site))
-        
+
         if not result:
             # No users in DB result -> not a valid username
             invalid_lichess_uname = True
@@ -268,7 +266,7 @@ async def iam(ctx, *args):
         code, _ = db_query(DB_FILENAME,
                            'UPDATE ChessUsernames SET discord_id = ? WHERE username = ?',
                            params=(discord_id, username))
-        
+
         if code == 0:
             await ctx.channel.send(f'Associated `{username}` with `{discord_id}`.')
         else:
@@ -298,7 +296,7 @@ async def iamnot(ctx, *args):
         username = result[0][0]  # Has proper caps
         code, _ = db_query(DB_FILENAME, 'UPDATE ChessUsernames SET discord_id = NULL WHERE username LIKE ?',
                            params=(username,))
-        
+
         if code == 0:
             await ctx.channel.send(f'Removed link from `{username}` to `{discord_id}`.')
         else:
@@ -307,8 +305,8 @@ async def iamnot(ctx, *args):
 
 @bot.command(brief='Shows Lichess player statuses (Chess.com coming soon)')
 async def show(ctx, *args):
-    """ 
-    Shows a formatted list of all users in the database and their 
+    """
+    Shows a formatted list of all users in the database and their
     current Lichess/Chess.com status (playing/active/offline)
     """
     async with ctx.channel.typing():
@@ -396,14 +394,14 @@ async def show(ctx, *args):
                         orientation = 'white'
                     else:
                         orientation = 'black'
-                    
+
                     # String that will be prepended to embed's footer (at end of function)
                     featured_game_desc = f'{game_obj.headers["White"]} ({game_obj.headers["WhiteElo"]}) ' \
                                          f'- {game_obj.headers["Black"]} ({game_obj.headers["BlackElo"]}) on Lichess\n\n'
-                    
+
                     # Truncate FEN to just the board layout part
                     game_fen_trunc = game_fen[:game_fen.find(' ')]
-                    
+
                     # Set the URL
                     img_url = f'https://backscattering.de/web-boardimage/board.png' \
                               f'?fen={game_fen_trunc}' \
@@ -435,23 +433,23 @@ async def show(ctx, *args):
 
             if has_image:
                 e.set_image(url=img)
-            
+
             e.add_field(name='In Game  ⚔', value='\n'.join(lines), inline=False)
-        
+
         # Active section
         if lichess_active:
             lines = []
             for u in lichess_active:
                 lines.append(f'**`{u}`**: Active on Lichess')
             e.add_field(name='Active  ⚡', value='\n'.join(lines), inline=False)
-        
+
         # Offline section
         if lichess_offline:
             lines = []
             for u in lichess_offline:
                 lines.append(f'**`{u}`**')
             e.add_field(name='Offline  💤', value='\n'.join(lines), inline=False)
-        
+
         # Footer
         e.set_footer(text=featured_game_desc+EMBED_FOOTER)
 
@@ -464,7 +462,7 @@ async def play(ctx, *args):
     async with ctx.channel.typing():
         # Sent when weeding out badly formatted commands
         USAGE = 'Usage: `/play [<min>+<sec>] [rated]`'
-        
+
         # Set default time format if none is specified
         DEFAULT_TIME_FORMAT = '10+5'
         DEFAULT_RATED = 'casual'
@@ -483,15 +481,15 @@ async def play(ctx, *args):
         else:
             await ctx.channel.send(USAGE)
             return
-        
+
         if rated.lower() not in ('rated', 'casual'):
             await ctx.channel.send(USAGE)
             return
-        
+
         if '+' not in time_format or time_format == '0+0':
             await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
             return
-        
+
         minutes, seconds = time_format.split('+')
         fraction_formats = {
             '1/4': 15,
@@ -531,7 +529,7 @@ async def play(ctx, *args):
         # elif clock_limit == 0 and clock_inc < 3:
         #     # clock_inc = 3
         #     ...  # TODO
-        
+
         is_rated = rated.lower() == 'rated'
 
         # Make POST request
@@ -542,7 +540,7 @@ async def play(ctx, *args):
         }
         response = json.loads(requests.post('https://lichess.org/api/challenge/open',
                                             data=post_data).text)
-        
+
         # Catch API errors
         if 'error' in response:
             await ctx.channel.send('Error: Lichess API could not generate a game link :(')
@@ -566,7 +564,7 @@ async def play(ctx, *args):
         ]
         e.add_field(name='Play  ⚔', value='\n'.join(lines), inline=False)
         e.set_footer(text=EMBED_FOOTER)
-        
+
         await ctx.channel.send(embed=e)
 
 
