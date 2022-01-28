@@ -307,6 +307,30 @@ async def iamnot(ctx, *args):
             await ctx.channel.send(f'A database error occurred. DM @Cubigami and it can be resolved manually.')
 
 
+@bot.command(brief='Find connected accounts of the specified player')
+async def whois(ctx, *args):
+    """ Show connected account(s) of the specified player. """
+
+    with ctx.channel.typing():
+        if len(args) != 1:
+            await ctx.channel.send('Usage: `/whois <Discord username>#<XXXX>`, ex. `/whois Cubigami#3114`')
+            return
+        discord_id = args[0]
+
+        _, result = db_query(DB_FILENAME, 'SELECT discord_id, username FROM ChessUsernames WHERE discord_id LIKE ?',
+                             params=(discord_id,))
+        if not result:
+            await ctx.channel.send(f'`{discord_id}` isn\'t in the database.')
+            return
+
+        discord_id_proper_caps, _ = result[0]
+        response = f'`{discord_id_proper_caps}` has linked the following accounts:\n'
+        for _, username in result:
+            response += f'\n- `{username}` (Lichess)'
+
+        await ctx.channel.send(response)
+
+
 @bot.command(brief='Shows Lichess player statuses (Chess.com coming soon)')
 async def show(ctx, *args):
     """
