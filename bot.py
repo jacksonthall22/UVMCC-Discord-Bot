@@ -163,7 +163,7 @@ async def add(ctx, *args):
 
         # Execute insertion
         db_query(DB_FILENAME,
-                 'INSERT INTO DiscordUsers(username) VALUES (?)',
+                 'INSERT INTO DiscordUsers(discord_id) VALUES (?)',
                  params=(username_proper_caps,))
         code, _ = db_query(DB_FILENAME,
                            'INSERT INTO ChessUsernames(username, site) VALUES (?, "lichess.org")',
