@@ -272,12 +272,12 @@ async def iam(ctx, *args):
                            params=(discord_id, username))
 
         if code == 0:
-            await ctx.channel.send(f'Associated `{username}` with `{discord_id}`.')
+            await ctx.channel.send(f'Linked `{username}` to `{discord_id}`.')
         else:
             await ctx.channel.send(f'A database error occurred. DM @Cubigami and it can be resolved manually.')
 
 
-@bot.command(brief='Disconnect your Discord ID from a Lichess username.')
+@bot.command(brief='Unlink your Discord account from a Lichess username.')
 async def iamnot(ctx, *args):
     """ Remove association between a lichess or chess.com username and the user's Discord ID. """
     # Note: Not fully functional if 2 users have the same username on different sites.
@@ -307,9 +307,10 @@ async def iamnot(ctx, *args):
             await ctx.channel.send(f'A database error occurred. DM @Cubigami and it can be resolved manually.')
 
 
-@bot.command(brief='Find connected accounts of the specified player')
+@bot.command(brief='Show all chess accounts linked to the specified Discord account, or show the Discord ID linked '
+                   'to a chess account')
 async def whois(ctx, *args):
-    """ Show connected account(s) of the specified player. """
+    """ Show linked chess account(s) of the specified Discord ID or vice versa. """
 
     with ctx.channel.typing():
         if len(args) != 1:
@@ -329,7 +330,7 @@ async def whois(ctx, *args):
                 return
 
             discord_id_proper_caps, _ = result[0]
-            response = f'`{discord_id_proper_caps}` has linked the following accounts:\n'
+            response = f'`{discord_id_proper_caps}` has linked the following chess accounts:\n'
             for _, username in result:
                 response += f'\n - `{username}` (Lichess)'
 
@@ -368,8 +369,8 @@ async def show(ctx, *args):
                                         'SELECT username FROM ChessUsernames WHERE discord_id = ?',
                                         params=(str(ctx.message.author),))
                 if not result:
-                    await ctx.channel.send('You have no Lichess or Chess.com usernames associated with '
-                                           'your Discord account. Use `/iam <username>` to add some.')
+                    await ctx.channel.send('You have no Lichess or Chess.com usernames linked to '
+                                           'your Discord account. Use `/iam <username>` to link some.')
                     return
                 else:
                     usernames = [e[0] for e in result]
@@ -440,6 +441,7 @@ async def show(ctx, *args):
                     else:
                         orientation = 'black'
 
+                    # TODO add IM/GM/etc. title before username if there is one
                     # String that will be prepended to embed's footer (at end of function)
                     featured_game_desc = f'{game_obj.headers["White"]} ({game_obj.headers["WhiteElo"]}) ' \
                                          f'- {game_obj.headers["Black"]} ({game_obj.headers["BlackElo"]}) on Lichess\n\n'
