@@ -346,6 +346,10 @@ async def whois(ctx, *args):
                 return
 
             discord_id_proper_caps, username_proper_caps = result[0]
+            if discord_id_proper_caps is None:
+                await ctx.channel.send(f'`{username_proper_caps}` is not linked to any Discord account.')
+                return
+
             await ctx.channel.send(f'`{username_proper_caps}` is `{discord_id_proper_caps}`.')
 
 
