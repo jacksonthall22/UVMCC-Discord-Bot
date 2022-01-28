@@ -14,9 +14,7 @@ from dotenv import load_dotenv
 from icecream import ic
 
 load_dotenv()
-
 TOKEN = os.getenv('DISCORD_TOKEN')
-
 bot = commands.Bot(command_prefix='/')
 
 LINK_TO_CODE = 'https://github.com/jacksonthall22/UVMCC-Discord-Bot'
@@ -54,7 +52,13 @@ def log(s, filename=LOG_FILENAME):
         f.write(f'{str(datetime.datetime.now())} {s}'.strip() + '\n')
 
 
-def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbose=VERBOSE):
+def db_query(db_name: str,
+             query: str,
+             params: Tuple = None,
+             do_log=LOG,
+             log_filename=LOG_FILENAME,
+             debug=DEBUG,
+             verbose=VERBOSE):
     """
     Connect with the given sqlite3 database and execute a query. Return a
     custom exit code and cur.fetchall() for the command.
@@ -101,8 +105,8 @@ def db_query(db_name: str, query: str, params: Tuple = None, debug=DEBUG, verbos
             print('Stack trace:\n', err)
         log_str += f'\nQuery failed with exit code 1. Stack trace:\n{err}'
 
-    if LOG:
-        log(log_str)
+    if do_log:
+        log(log_str, log_filename)
 
     return exit_code, query_result
 
@@ -243,7 +247,7 @@ async def remove(ctx, *args):
 
 @bot.command(brief='Connect your Discord ID to a Lichess username so you can use `/show me`')
 async def iam(ctx, *args):
-    """ Let a user associate a lichess or chess.com username with their Discord ID. """
+    """ Let a user associate a Lichess or Chess.com username with their Discord ID. """
     # Note: Not fully functional if 2 users have the same username on different sites.
 
     with ctx.channel.typing():
