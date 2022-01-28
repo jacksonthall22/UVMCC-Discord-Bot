@@ -313,22 +313,39 @@ async def whois(ctx, *args):
 
     with ctx.channel.typing():
         if len(args) != 1:
-            await ctx.channel.send('Usage: `/whois <Discord username>#<XXXX>`, ex. `/whois Cubigami#3114`')
-            return
-        discord_id = args[0]
-
-        _, result = db_query(DB_FILENAME, 'SELECT discord_id, username FROM ChessUsernames WHERE discord_id LIKE ?',
-                             params=(discord_id,))
-        if not result:
-            await ctx.channel.send(f'`{discord_id}` isn\'t in the database.')
+            await ctx.channel.send('Usages:\n'
+                                   ' - `/whois <Discord username>#<XXXX>`, ex. `/whois cubigami#3114`\n'
+                                   ' - `/whois <Lichess/Chess.com username>`, ex. `/whois cubigami`')
             return
 
-        discord_id_proper_caps, _ = result[0]
-        response = f'`{discord_id_proper_caps}` has linked the following accounts:\n'
-        for _, username in result:
-            response += f'\n- `{username}` (Lichess)'
+        # Determine what to search for
+        if '#' in args[0]:
+            discord_id = args[0]
 
-        await ctx.channel.send(response)
+            _, result = db_query(DB_FILENAME, 'SELECT discord_id, username FROM ChessUsernames WHERE discord_id LIKE ?',
+                                 params=(discord_id,))
+            if not result:
+                await ctx.channel.send(f'`{discord_id}` isn\'t a Discord username in the database.')
+                return
+
+            discord_id_proper_caps, _ = result[0]
+            response = f'`{discord_id_proper_caps}` has linked the following accounts:\n'
+            for _, username in result:
+                response += f'\n - `{username}` (Lichess)'
+
+            await ctx.channel.send(response)
+            return
+        else:
+            username = args[0]
+
+            _, result = db_query(DB_FILENAME, 'SELECT discord_id, username FROM ChessUsernames WHERE username LIKE ?',
+                                 params=(username,))
+            if not result:
+                await ctx.channel.send(f'`{username}` isn\'t a chess username in the database.')
+                return
+
+            discord_id_proper_caps, username_proper_caps = result[0]
+            await ctx.channel.send(f'`{username_proper_caps}` is `{discord_id_proper_caps}`.')
 
 
 @bot.command(brief='Shows Lichess player statuses (Chess.com coming soon)')
