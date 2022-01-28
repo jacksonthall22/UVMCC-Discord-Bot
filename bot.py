@@ -122,7 +122,7 @@ async def on_ready():
 
     db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS DiscordUsers (discord_id TEXT PRIMARY KEY)')
     db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS ChessSites (site TEXT PRIMARY KEY COLLATE NOCASE)')
-    # db_query(DB_FILENAME, 'INSERT INTO ChessSites(site) VALUES ("lichess.org"), ("chess.com")')
+    db_query(DB_FILENAME, 'INSERT INTO ChessSites(site) VALUES ("lichess.org"), ("chess.com")')
     db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS ChessUsernames '
                           '(username TEXT PRIMARY KEY,'
                           ' discord_id TEXT,'
