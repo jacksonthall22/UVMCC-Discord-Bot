@@ -353,6 +353,29 @@ async def whois(ctx, *args):
             await ctx.channel.send(f'`{username_proper_caps}` is `{discord_id_proper_caps}`.')
 
 
+@bot.command(brief='Show accounts you have connected to your Discord ID')
+async def whoami(ctx, *args):
+    """ Show connected account(s) of the specified player. """
+
+    with ctx.channel.typing():
+        if len(args) != 0:
+            await ctx.channel.send('Usage: `/whoami`')
+            return
+
+        discord_id = str(ctx.message.author)
+        _, result = db_query(DB_FILENAME, 'SELECT discord_id, username FROM ChessUsernames WHERE discord_id LIKE ?',
+                             params=(discord_id,))
+        if not result:
+            await ctx.channel.send(f'Your Discord account `{discord_id}` isn\'t anywhere in the database.')
+            return
+
+        response = f'You have linked the following chess accounts to `{discord_id}`:\n'
+        for _, username in result:
+            response += f'\n - `{username}` (Lichess)'
+
+        await ctx.channel.send(response)
+
+
 @bot.command(brief='Shows Lichess player statuses (Chess.com coming soon)')
 async def show(ctx, *args):
     """
