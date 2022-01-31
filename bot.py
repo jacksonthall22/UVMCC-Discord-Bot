@@ -251,7 +251,7 @@ async def iam(ctx, *args):
     """ Let a user associate a Lichess or Chess.com username with their Discord ID. """
     # Note: Not fully functional if 2 users have the same username on different sites.
 
-    with ctx.channel.typing():
+    async with ctx.channel.typing():
         if len(args) != 1:
             await ctx.channel.send('Usage: `/iam <username>`')
             return
@@ -283,7 +283,7 @@ async def iamnot(ctx, *args):
     """ Remove association between a lichess or chess.com username and the user's Discord ID. """
     # Note: Not fully functional if 2 users have the same username on different sites.
 
-    with ctx.channel.typing():
+    async with ctx.channel.typing():
         if len(args) != 1:
             await ctx.channel.send('Usage: `/iamnot <username>`')
             return
@@ -313,7 +313,7 @@ async def iamnot(ctx, *args):
 async def whois(ctx, *args):
     """ Show linked chess account(s) of the specified Discord ID or vice versa. """
 
-    with ctx.channel.typing():
+    async with ctx.channel.typing():
         if len(args) != 1:
             await ctx.channel.send('Usages:\n'
                                    ' - `/whois <Discord username>#<XXXX>`, ex. `/whois cubigami#3114`\n'
@@ -358,7 +358,7 @@ async def whois(ctx, *args):
 async def whoami(ctx, *args):
     """ Show connected account(s) of the specified player. """
 
-    with ctx.channel.typing():
+    async with ctx.channel.typing():
         if len(args) != 0:
             await ctx.channel.send('Usage: `/whoami`')
             return
