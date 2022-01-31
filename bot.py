@@ -112,6 +112,22 @@ def db_query(db_name: str,
     return exit_code, query_result
 
 
+def get_board_image(fen: str,
+                    orientation: chess.COLOR_NAMES,
+                    last_move_uci: str = None) -> str:
+    """ Get a URL for a PNG image of a chess board with the given FEN highlighting the last move. """
+    # Validate fen
+    b = chess.Board(fen)
+
+    # Truncate FEN to just the board layout part
+    fen_trunc = fen[:fen.find(' ')]
+
+    return f'https://backscattering.de/web-boardimage/board.png' \
+           f'?fen={fen_trunc}' \
+           f'&orientation={orientation}' \
+           f'{"&lastMove=" + last_move_uci if last_move_uci else ""}'
+
+
 ''' ========== Commands ========== '''
 
 @bot.event
@@ -474,15 +490,7 @@ async def show(ctx, *args):
                     featured_game_desc = f'{game_obj.headers["White"]} ({game_obj.headers["WhiteElo"]}) ' \
                                          f'- {game_obj.headers["Black"]} ({game_obj.headers["BlackElo"]}) on Lichess\n\n'
 
-                    # Truncate FEN to just the board layout part
-                    game_fen_trunc = game_fen[:game_fen.find(' ')]
-
-                    # Set the URL
-                    img_url = f'https://backscattering.de/web-boardimage/board.png' \
-                              f'?fen={game_fen_trunc}' \
-                              f'&orientation={orientation}' \
-                              f'{"&lastMove="+last_move if last_move else ""}'
-                    lichess_playing[user['name']]['img'] = img_url
+                    lichess_playing[user['name']]['img'] = get_board_image(game_fen, orientation, last_move)
                     featured_game_was_set = True
 
             elif 'online' in user and user['online']:
