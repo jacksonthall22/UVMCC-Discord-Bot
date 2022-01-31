@@ -1,4 +1,6 @@
 from typing import *
+import chess
+import chess.pgn
 import os
 import io
 import re
@@ -8,7 +10,6 @@ import datetime
 import sqlite3
 import discord
 from discord.ext import commands
-import chess.pgn
 from dotenv import load_dotenv
 
 from icecream import ic
@@ -122,13 +123,13 @@ async def on_ready():
 
     db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS DiscordUsers (discord_id TEXT PRIMARY KEY)')
     db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS ChessSites (site TEXT PRIMARY KEY COLLATE NOCASE)')
-    db_query(DB_FILENAME, 'INSERT INTO ChessSites(site) VALUES ("lichess.org"), ("chess.com")')
+    db_query(DB_FILENAME, 'INSERT OR IGNORE INTO ChessSites(site) VALUES ("lichess.org"), ("chess.com")')
     db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS ChessUsernames '
-                          '(username TEXT PRIMARY KEY,'
-                          ' discord_id TEXT,'
-                          ' site TEXT,'
-                          ' FOREIGN KEY(discord_id) REFERENCES DiscordUsers(discord_id),'
-                          ' FOREIGN KEY(site) REFERENCES ChessSites(site))')
+                                '(username TEXT PRIMARY KEY, '
+                                'discord_id TEXT, '
+                                'site TEXT, '
+                                'FOREIGN KEY(discord_id) REFERENCES DiscordUsers(discord_id), '
+                                'FOREIGN KEY(site) REFERENCES ChessSites(site))')
 
 
 @bot.command(brief='Says hello')
