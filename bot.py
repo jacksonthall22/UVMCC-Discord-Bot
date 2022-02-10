@@ -1309,11 +1309,7 @@ async def vc(ctx, *args):
                 if code != 0:
                     await ctx.channel.send('There was a database error :(')
                     return
-
-                if not result:
-                    await ctx.channel.send(f'There was a database error :(. Something weird is going on, match code '
-                                           f'`{match_code}` was just found a second ago, but now it\'s not there.')
-                    return
+                assert len(result) == 1
 
                 match_code, match_name = result[0]
                 await ctx.channel.send(f'Left Vote Chess match `{match_code}`: "**{match_name}**"')
