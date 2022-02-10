@@ -1611,6 +1611,21 @@ async def vc(ctx, *args):
                                        f'aborted. DM @Cubigami and the issue can be resolved manually.')
                 return
 
+            ''' Validate that user's "side" is the current side to move '''
+            code, result = db_query(DB_FILENAME, 'SELECT side FROM VoteMatchPairings '
+                                                 'WHERE match_code LIKE ? '
+                                                 '      AND discord_id = ? '
+                                                 '      AND side IN (?, "Both")',
+                                    params=(match_code, str(ctx.message.author), orientation.capitalize()))
+            if code != 0:
+                await ctx.channel.send('There was a database error :(')
+                return
+            if not result:
+                await ctx.channel.send(f'It is {orientation}\'s turn in match `{match_code}`: "**{match_name}**". '
+                                       f'You cannot vote for the other team!')
+                return
+
+            ''' Handle draw/resign offers first (and return to skip move validation later) '''
             if move_vote.lower() in ('draw', 'resign'):
                 move_vote = move_vote.lower()
 
@@ -1733,8 +1748,10 @@ async def vc(ctx, *args):
                                                      'WHERE match_code LIKE ? '
                                                      '      AND side IN (?, "Both") '
                                                      '      AND discord_id IN (SELECT discord_id FROM VoteMatchVotes '
-                                                    f'                         WHERE voted_{move_vote}) = 1',
-                                        params=(match_code, orientation.capitalize()))
+                                                     '                         WHERE match_code LIKE ? '
+                                                    f'                               AND voted_{move_vote} = 1 '
+                                                    f'                               AND ply_count = ?)',
+                                        params=(match_code, orientation.capitalize(), match_code, ply_count))
                 if code != 0:
                     await ctx.channel.send('There was a database error :(')
                     return
