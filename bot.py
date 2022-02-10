@@ -952,6 +952,10 @@ async def vc(ctx, *args):
             return
         sub_cmd = args[0].lower()
 
+        if sub_cmd not in SUB_CMD_USAGE_MSGS:
+            await ctx.channel.send(USAGE_MSG_SHORT)
+            return
+
         ''' Handle sub-commands '''
         args = args[1:]
 
