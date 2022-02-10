@@ -1238,11 +1238,10 @@ async def vc(ctx, *args):
                     msg += f'\n> `{match_code}`: "**{match_name}**"'
                 await ctx.channel.send(msg)
             else:
-                # Just leave the match using the user-provided match_code
-                code, result = db_query(DB_FILENAME, 'SELECT discord_id FROM VoteMatchPairings '
-                                                     'WHERE discord_id = ? '
-                                                     '      AND match_code LIKE ?',
-                                        params=(str(ctx.message.author), match_code))
+                ''' Make sure the match code exists'''
+                code, result = db_query(DB_FILENAME, 'SELECT * FROM VoteMatches '
+                                                     'WHERE match_code LIKE ?',
+                                        params=(match_code,))
                 if code != 0:
                     await ctx.channel.send('There was a database error :(')
                     return
@@ -1250,12 +1249,50 @@ async def vc(ctx, *args):
                     await ctx.channel.send(f'There are no matches with code `{match_code}`. Check the code and '
                                            f'try again.')
                     return
+
+                ''' Make sure user is in this match '''
+                code, result = db_query(DB_FILENAME, 'SELECT * FROM VoteMatchPairings '
+                                                     'WHERE match_code LIKE ? '
+                                                     '      AND discord_id = ?',
+                                        params=(match_code, str(ctx.message.author)))
+                if code != 0:
+                    await ctx.channel.send('There was a database error :(')
+                    return
+                if not result:
+                    await ctx.channel.send(f'You have not joined match `{match_code}`.')
+                    return
                 assert len(result) == 1, await ctx.channel.send(f'There was a database integrity error :(. '
                                                                 f'Multiple ({len(result)}) match pairings with '
                                                                 f'match_code=`{match_code}`, '
                                                                 f'discord_id=`{str(ctx.message.author)}`')
 
-                # TODO only allow user to leave "Not Started" matches
+                ''' Only allow user to leave "Not Started" matches '''
+                code, result = db_query(DB_FILENAME, 'SELECT status FROM VoteMatches '
+                                                     'WHERE match_code LIKE ?',
+                                        params=(match_code,))
+                if code != 0:
+                    await ctx.channel.send('There was a database error :(')
+                    return
+                assert len(result) == 1
+
+                status, = result[0]
+                if status == 'Aborted':
+                    await ctx.channel.send(f'Cannot leave match `{match_code}`: match was aborted.')
+                    return
+                elif status == 'In Progress':
+                    await ctx.channel.send(f'Cannot leave match `{match_code}`: match has already started and must be '
+                                           f'completed or resigned by majority vote using `/vc vote resign`.')
+                    return
+                elif status == 'Abandoned':
+                    await ctx.channel.send(f'Cannot leave match `{match_code}`: match was abandoned.')
+                    return
+                elif status == 'Complete':
+                    await ctx.channel.send(f'Cannot leave match `{match_code}`: match has already finished.')
+                    return
+                elif status != 'Not Started':
+                    await ctx.channel.send(f'Cannot leave match `{match_code}`: match has unknown status `{status}`. '
+                                           f'DM @Cubigami and the issue can be resolved manually.')
+                    return
 
                 code, _ = db_query(DB_FILENAME, 'DELETE FROM VoteMatchPairings '
                                                 'WHERE discord_id = ? '
@@ -1279,8 +1316,7 @@ async def vc(ctx, *args):
                     return
 
                 match_code, match_name = result[0]
-                await ctx.channel.send(f'Left Vote Chess match:\n'
-                                       f'> `{match_code}`: "**{match_name}**"')
+                await ctx.channel.send(f'Left Vote Chess match `{match_code}`: "**{match_name}**"')
         elif sub_cmd == 'start':
             if len(args) != 1:
                 await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
