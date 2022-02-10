@@ -2343,7 +2343,7 @@ async def vc(ctx, *args):
 
             # Either infer the match_code if none is given, or use the user-inputted arg
             if len(args) == 0:
-                # Get all matches for this user, past & present
+                # Get all active matches for this user, past & present
                 code, result = db_query(DB_FILENAME,
                                         'SELECT match_code, match_name FROM VoteMatches '
                                         'WHERE match_code IN (SELECT match_code FROM VoteMatchPairings '
@@ -2734,11 +2734,12 @@ async def vc(ctx, *args):
 
             # Either infer the match_code if none is given, or use the user-inputted arg and make sure it exists
             if len(args) == 0:
-                # Get all matches for this user, past & present
+                # Get all active matches for this user, past & present
                 code, result = db_query(DB_FILENAME,
                                         'SELECT match_code, match_name FROM VoteMatches '
                                         'WHERE match_code IN (SELECT match_code FROM VoteMatchPairings '
-                                        '                     WHERE discord_id LIKE ?)',
+                                        '                     WHERE discord_id LIKE ?)'
+                                        '      AND status IN ("Not Started", "In Progress")',
                                         params=(str(ctx.message.author),))
                 if code != 0:
                     await ctx.channel.send('There was a database error :(')
