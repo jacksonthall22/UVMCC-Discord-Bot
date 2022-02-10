@@ -1561,8 +1561,8 @@ async def vc(ctx, *args):
                         return
 
                 match_code = valid_match_codes[0]
-            else:
-                ''' Match code is provided as second argument, no need to query to infer it. '''
+            else:  # len(args) == 2
+                ''' Match code is provided as second argument, no need to query to infer it. Validate SAN move later '''
                 match_code = args[1].upper()
 
             ''' Verify that match_code exists '''
@@ -1589,7 +1589,6 @@ async def vc(ctx, *args):
             last_move = get_last_move(pgn=pgn, format='san')
             ply_count = current_board.ply()
 
-            ''' Make sure status is "In Progress" '''
             if status == 'Not Started':
                 await ctx.channel.send(f'Cannot cast vote: match `{match_code}` hasn\'t started yet. Use '
                                        f'`/vc start {match_code}` once all players have joined.')
@@ -2016,7 +2015,7 @@ async def vc(ctx, *args):
                                params=(match_code, str(ctx.message.author), ply_count, move_vote))
             if code == 2:
                 # Code 2 means unique constraint failed. This means user already voted to draw/resign
-                # so there is already a record in the database with conflicting primary key. Instead update it.
+                # so there is already a record in the database with conflicting primary key, so update it instead.
                 code, _ = db_query(DB_FILENAME, 'UPDATE VoteMatchVotes '
                                                 'SET vote = ? '
                                                 'WHERE match_code LIKE ? '
