@@ -1464,7 +1464,7 @@ async def vc(ctx, *args):
             move_vote = args[0]
 
             if len(args) == 1:
-                ''' No match code provided: try to infer it based on current board positions '''
+                ''' No match code provided: try to infer it based on current board positions, and validate SAN move '''
                 # Get all user's current matches - this includes ones that can't be voted on
                 code, results = db_query(DB_FILENAME, 'SELECT match_code, match_name, pgn FROM VoteMatches '
                                                       'WHERE status = "In Progress" '
@@ -1539,13 +1539,11 @@ async def vc(ctx, *args):
 
                         # Make sure move is legal in the position
                         try:
-                            move = b.push_san(move_vote)
-                            move_san = move_vote
-                        except ValueError:
+                            b.push_san(move_vote)
+                        except (ValueError, AssertionError):
                             try:
-                                move = chess.Move.from_uci(move_vote)
-                                move_san = b.san_and_push(move)
-                            except ValueError:
+                                b.push_uci(move_vote)
+                            except (ValueError, AssertionError):
                                 continue
                         valid_match_codes.append(match_code)
 
@@ -1967,6 +1965,20 @@ async def vc(ctx, *args):
                 await ctx.channel.send('Resign/draw offers are not yet implemented.')
                 return
 
+            ''' Validate that move is legal in this position '''
+            b = current_board.copy()
+            try:
+                move = b.push_san(move_vote)
+            except ValueError:
+                try:
+                    move = b.push_uci(move_vote)
+                except ValueError:
+                    await ctx.channel.send(f'`{move_vote}` is not a valid move '
+                                           f'in match `{match_code}`: "**{match_name}**"')
+                    return
+            # Turns ex. "Qh4" into "Qh4#" if necessary
+            move_vote = current_board.san(move)
+
             # Here, move_vote is not "draw"/"resign"
             ''' Validate that user hasn't already voted '''
             code, result = db_query(DB_FILENAME, 'SELECT vote FROM VoteMatchVotes '
@@ -2000,7 +2012,6 @@ async def vc(ctx, *args):
                 return
 
             ''' Cast a vote for the move '''
-            move_vote = current_board.san(current_board.parse_san(move_vote))  # Turn ex. "Qh4" into "Qh4#" if necessary
             code, _ = db_query(DB_FILENAME, 'INSERT INTO VoteMatchVotes(match_code, discord_id, ply_count, vote) '
                                             'VALUES (?, ?, ?, ?)',
                                params=(match_code, str(ctx.message.author), ply_count, move_vote))
