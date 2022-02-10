@@ -633,7 +633,8 @@ async def show(ctx, *args):
     """
     async with ctx.channel.typing():
         # Build embedded message
-        e = discord.Embed(title='Lichess Player Statuses')
+        e = discord.Embed(title='Lichess Player Statuses',
+                          color=0xB58863)
         e.set_author(name=bot.user.name,
                      url=LINK_TO_CODE,
                      icon_url=bot.user.avatar_url)
