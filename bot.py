@@ -2350,7 +2350,7 @@ async def vc(ctx, *args):
                     return
         elif sub_cmd == 'status':
             if len(args) not in (0, 1):
-                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sum_cmd])
+                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
                 return
 
             # Either infer the match_code if none is given, or use the user-inputted arg
