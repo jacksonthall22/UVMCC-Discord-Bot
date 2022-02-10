@@ -1043,8 +1043,7 @@ async def vc(ctx, *args):
                 await ctx.channel.send(f'Aborted match `{match_code}`.')
             elif match_status == 'In Progress':
                 await ctx.channel.send(f'Cannot abort match `{match_code}`: match is in progress and must be '
-                                       f'completed or abandoned by majority vote using `/vc vote abandon'
-                                       f' {match_code}`. Abandoning a match loses the game.')
+                                       f'completed or resigned by majority vote using `/vc vote resign {match_code}`.')
             elif match_status == 'Aborted':
                 await ctx.channel.send(f'Cannot abort match `{match_code}`: match was aborted.')
             elif match_status == 'Abandoned':
