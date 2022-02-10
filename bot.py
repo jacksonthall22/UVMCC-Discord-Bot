@@ -926,11 +926,9 @@ async def vc(ctx, *args):
                 'to that match automatically. Otherwise, the game\'s match code must be provided. Votes are final '
                 'unless there is a tie at the end of the voting period, in which case all votes will be recast. Move '
                 'must be in algebraic notation, like `Nf3`, or name two squares, like `g1f3`.',
-        'status': '`/vc status [<match code>]`\n'
-                  '> Shows info about the current position of the given match. If no match code is provided, '
-                  'shows info about all of your active matches.',
-        'show': '`/vc show`\n'
-                '> Shows the status of active and recently-completed matches.',
+        'show': '`/vc show [<match code>|me]`\n'
+                '> Shows the status of active and recently-completed matches. If a match code is provided, '
+                'show the status for that match, or if "me" is provided, show the status of matches you\'ve joined.',
         'rematch': '`/vc rematch <match code>`\n'
                    '> Starts a new match with the same teams as the other match, but as the opposite colors.',
         'remind': '`/vc remind <match code>`\n'
@@ -1302,148 +1300,8 @@ async def vc(ctx, *args):
                 return
             status, = result[0]
 
-            if status == 'Not Started':
-                ''' Pair players who joined randomly '''
-                # First get all pairings and the side(s) they joined
-                code, result = db_query(DB_FILENAME, 'SELECT discord_id, side FROM VoteMatchPairings '
-                                                     'WHERE match_code LIKE ?',
-                                        params=(match_code,))
-                if code != 0:
-                    await ctx.channel.send('There was a database error :(')
-                    return
-                if not result:
-                    await ctx.channel.send(f'Cannot start match `{match_code}`: no players have joined either side.')
-                    return
-
-                # Split by "side"
-                players_by_side = defaultdict(list)
-                for discord_id, side in result:
-                    players_by_side[side.lower()].append(discord_id)
-
-                ''' Make sure there are enough players '''
-                random_players = players_by_side['random']
-                white_players = players_by_side['white']
-                black_players = players_by_side['black']
-                both_players = players_by_side['both']
-
-                num_white_players = len(white_players) + len(both_players)
-                num_black_players = len(black_players) + len(both_players)
-                num_random_players = len(random_players)
-
-                if (num_white_players == 0 or num_black_players == 0) \
-                        and num_random_players == 0:
-                    side = ('black', 'white')[num_white_players == 0]
-                    await ctx.channel.send(f'Cannot start match `{match_code}`: no players have joined as {side}.')
-                    return
-                elif num_white_players == num_black_players == 0 and num_random_players < 2:
-                    await ctx.channel.send(f'Cannot start match `{match_code}`: not enough players.')
-                    return
-
-                ''' Transfer "random" players to a random team '''
-                if random_players:
-                    # If num_total_players is odd, this gives preference randomly to white if True, black if False
-                    rand_preference = bool(random.getrandbits(1))
-
-                    # Note that num_total_players might double-count some players playing as "both" - this is intended
-                    num_total_players = num_white_players + num_black_players + num_random_players
-
-                    # Number of players by team after random placement
-                    future_num_white = (math.floor, math.ceil)[rand_preference](num_total_players / 2)
-                    future_num_black = (math.floor, math.ceil)[not rand_preference](num_total_players / 2)
-
-                    # Number to add to existing teams to reach these numbers
-                    num_transfer_to_white = future_num_white - num_white_players
-                    num_transfer_to_black = future_num_black - num_black_players
-
-                    # If number to transfer to either side is negative, it means that balancing the teams
-                    # (make them equal size or within 1 if total is odd) would require removing players
-                    # from the larger team. In this case just add all random players to the smaller team.
-                    if num_transfer_to_white < 0 or num_transfer_to_black < 0:
-                        # Balancing black would mean removing players from white.
-                        # In this case add all random players to the smaller team
-                        if num_white_players < num_black_players:
-                            num_transfer_to_white = num_random_players
-                            num_transfer_to_black = 0
-                        elif num_black_players < num_white_players:
-                            num_transfer_to_white = 0
-                            num_transfer_to_black = num_random_players
-                        else:
-                            # Team aren't equal if either number above is < 0, something would be wrong
-                            # setting num_transfer_to_white/black
-                            assert False
-
-                    transfer_to_white = random.sample(random_players, num_transfer_to_white)
-                    transfer_to_black = list(set(random_players) - set(transfer_to_white))
-                    assert len(transfer_to_black) == num_transfer_to_black
-
-                    # Update player sides to "white"/"black" for this match
-                    for discord_id in transfer_to_white:
-                        code, _ = db_query(DB_FILENAME, 'UPDATE VoteMatchPairings SET side = "White" '
-                                                        'WHERE match_code LIKE ? '
-                                                        'AND discord_id = ?',
-                                           params=(match_code, discord_id))
-                        if code != 0:
-                            await ctx.channel.send('There was a database error :(')
-                            return
-                    for discord_id in transfer_to_black:
-                        code, _ = db_query(DB_FILENAME, 'UPDATE VoteMatchPairings SET side = "Black" '
-                                                        'WHERE match_code LIKE ? '
-                                                        'AND discord_id = ?',
-                                           params=(match_code, discord_id))
-                        if code != 0:
-                            await ctx.channel.send('There was a database error :(')
-                            return
-
-                ''' Set match status to "In Progress" '''
-                current_time = int(time.time())
-                code, _ = db_query(DB_FILENAME, 'UPDATE VoteMatches '
-                                                'SET status = "In Progress", unix_time_started = ? '
-                                                'WHERE match_code LIKE ?',
-                                   params=(current_time, match_code))
-                if code != 0:
-                    await ctx.channel.send('There was a database error :(')
-                    return
-
-                ''' Get match name '''
-                code, result = db_query(DB_FILENAME, 'SELECT match_name, starting_fen FROM VoteMatches '
-                                                     'WHERE match_code LIKE ?',
-                                        params=(match_code,))
-                if code != 0:
-                    await ctx.channel.send('There was a database error :(')
-                    return
-                if not result:
-                    await ctx.channel.send(f'There was a database integrity error :(. There should be a match with '
-                                           f'match_code `{match_code}`, but none was found.')
-                    return
-                elif len(result) != 1:
-                    await ctx.channel.send(f'There was a database integrity error :(. Multiple matches exist with '
-                                           f'match code `{match_code}`.')
-                    return
-                match_name, starting_fen = result[0]
-                orientation = get_turn(fen=starting_fen, as_str=True)
-
-                ''' Send Embed message '''
-                e = discord.Embed(title=f'Starting Match `{match_code}`: "**{match_name}**"',
-                                  color=(0x000000, 0xFFFFFF)[orientation == 'white'])
-                e.set_author(name=bot.user.name,
-                             url=LINK_TO_CODE,
-                             icon_url=bot.user.avatar_url)
-                e.set_image(url=get_board_image(starting_fen, orientation))
-                msg = 'Use `/vc vote <move>` to cast your votes! A move will be played once all players on a team ' \
-                      'have voted. If it\'s a tie, votes will be recast. You may vote to offer/accept a draw or ' \
-                      'resign like this (TODO: not yet implemented):\n' \
-                      '> `/vc vote draw`\n' \
-                      '> `/vc vote resign`\n' \
-                      'If the majority does the same, an draw offer is offered/accepted or the game is resigned.'
-                e.add_field(name=f'It\'s {orientation} to move', value=msg, inline=False)
-                msg = 'You can use `/vc status` to check the status on your active matches and see ' \
-                      'who still needs to vote, and use `/vc remind` to tag all players on your team who haven\'t ' \
-                      'voted on the current move.'
-                e.add_field(name='Tips', value=msg, inline=False)
-                e.set_footer(text=EMBED_FOOTER)
-                await ctx.channel.send(embed=e)
-                return
-            elif status == 'Aborted':
+            ''' Make sure status is "Not Started" '''
+            if status == 'Aborted':
                 await ctx.channel.send(f'Cannot start match `{match_code}`: match was aborted.')
                 return
             elif status == 'In Progress':
@@ -1455,10 +1313,151 @@ async def vc(ctx, *args):
             elif status == 'Complete':
                 await ctx.channel.send(f'Cannot start match `{match_code}`: match has already finished.')
                 return
-            else:
+            elif status != 'Not Started':
                 await ctx.channel.send(f'Match `{match_code}` has unknown status "{status}" and could not be '
-                                       f'aborted. DM @Cubigami and the issue can be resolved manually.')
+                                       f'started. DM @Cubigami and the issue can be resolved manually.')
                 return
+
+            ''' Pair players who joined randomly '''
+            # First get all pairings and the side(s) they joined
+            code, result = db_query(DB_FILENAME, 'SELECT discord_id, side FROM VoteMatchPairings '
+                                                 'WHERE match_code LIKE ?',
+                                    params=(match_code,))
+            if code != 0:
+                await ctx.channel.send('There was a database error :(')
+                return
+            if not result:
+                await ctx.channel.send(f'Cannot start match `{match_code}`: no players have joined either side.')
+                return
+
+            # Split by "side"
+            players_by_side = defaultdict(list)
+            for discord_id, side in result:
+                players_by_side[side.lower()].append(discord_id)
+
+            ''' Make sure there are enough players '''
+            random_players = players_by_side['random']
+            white_players = players_by_side['white']
+            black_players = players_by_side['black']
+            both_players = players_by_side['both']
+
+            num_white_players = len(white_players) + len(both_players)
+            num_black_players = len(black_players) + len(both_players)
+            num_random_players = len(random_players)
+
+            if (num_white_players == 0 or num_black_players == 0) \
+                    and num_random_players == 0:
+                side = ('black', 'white')[num_white_players == 0]
+                await ctx.channel.send(f'Cannot start match `{match_code}`: no players have joined as {side}.')
+                return
+            elif num_white_players == num_black_players == 0 and num_random_players < 2:
+                await ctx.channel.send(f'Cannot start match `{match_code}`: not enough players.')
+                return
+
+            ''' Transfer "random" players to a random team '''
+            if random_players:
+                # If num_total_players is odd, this gives preference randomly to white if True, black if False
+                rand_preference = bool(random.getrandbits(1))
+
+                # Note that num_total_players might double-count some players playing as "both" - this is intended
+                num_total_players = num_white_players + num_black_players + num_random_players
+
+                # Number of players by team after random placement
+                future_num_white = (math.floor, math.ceil)[rand_preference](num_total_players / 2)
+                future_num_black = (math.floor, math.ceil)[not rand_preference](num_total_players / 2)
+
+                # Number to add to existing teams to reach these numbers
+                num_transfer_to_white = future_num_white - num_white_players
+                num_transfer_to_black = future_num_black - num_black_players
+
+                # If number to transfer to either side is negative, it means that balancing the teams
+                # (make them equal size or within 1 if total is odd) would require removing players
+                # from the larger team. In this case just add all random players to the smaller team.
+                if num_transfer_to_white < 0 or num_transfer_to_black < 0:
+                    # Balancing black would mean removing players from white.
+                    # In this case add all random players to the smaller team
+                    if num_white_players < num_black_players:
+                        num_transfer_to_white = num_random_players
+                        num_transfer_to_black = 0
+                    elif num_black_players < num_white_players:
+                        num_transfer_to_white = 0
+                        num_transfer_to_black = num_random_players
+                    else:
+                        # Team aren't equal if either number above is < 0, something would be wrong
+                        # setting num_transfer_to_white/black
+                        assert False
+
+                transfer_to_white = random.sample(random_players, num_transfer_to_white)
+                transfer_to_black = list(set(random_players) - set(transfer_to_white))
+                assert len(transfer_to_black) == num_transfer_to_black
+
+                # Update player sides to "white"/"black" for this match
+                for discord_id in transfer_to_white:
+                    code, _ = db_query(DB_FILENAME, 'UPDATE VoteMatchPairings SET side = "White" '
+                                                    'WHERE match_code LIKE ? '
+                                                    'AND discord_id = ?',
+                                       params=(match_code, discord_id))
+                    if code != 0:
+                        await ctx.channel.send('There was a database error :(')
+                        return
+                for discord_id in transfer_to_black:
+                    code, _ = db_query(DB_FILENAME, 'UPDATE VoteMatchPairings SET side = "Black" '
+                                                    'WHERE match_code LIKE ? '
+                                                    'AND discord_id = ?',
+                                       params=(match_code, discord_id))
+                    if code != 0:
+                        await ctx.channel.send('There was a database error :(')
+                        return
+
+            ''' Set match status to "In Progress" '''
+            current_time = int(time.time())
+            code, _ = db_query(DB_FILENAME, 'UPDATE VoteMatches '
+                                            'SET status = "In Progress", unix_time_started = ? '
+                                            'WHERE match_code LIKE ?',
+                               params=(current_time, match_code))
+            if code != 0:
+                await ctx.channel.send('There was a database error :(')
+                return
+
+            ''' Get match name '''
+            code, result = db_query(DB_FILENAME, 'SELECT match_name, starting_fen FROM VoteMatches '
+                                                 'WHERE match_code LIKE ?',
+                                    params=(match_code,))
+            if code != 0:
+                await ctx.channel.send('There was a database error :(')
+                return
+            if not result:
+                await ctx.channel.send(f'There was a database integrity error :(. There should be a match with '
+                                       f'match_code `{match_code}`, but none was found.')
+                return
+            elif len(result) != 1:
+                await ctx.channel.send(f'There was a database integrity error :(. Multiple matches exist with '
+                                       f'match code `{match_code}`.')
+                return
+            match_name, starting_fen = result[0]
+            orientation = get_turn(fen=starting_fen, as_str=True)
+
+            ''' Send Embed message '''
+            e = discord.Embed(title=f'Starting Match `{match_code}`: "**{match_name}**"',
+                              color=(0x000000, 0xFFFFFF)[orientation == 'white'])
+            e.set_author(name=bot.user.name,
+                         url=LINK_TO_CODE,
+                         icon_url=bot.user.avatar_url)
+            e.set_image(url=get_board_image(starting_fen, orientation))
+            msg = 'Use `/vc vote <move>` to cast your votes! A move will be played once all players on a team ' \
+                  'have voted. If it\'s a tie, votes will be recast. You may vote to offer/accept a draw or ' \
+                  'resign like this (TODO: not yet implemented):\n' \
+                  '> `/vc vote draw`\n' \
+                  '> `/vc vote resign`\n' \
+                  'If the majority does the same, an draw offer is offered/accepted or the game is resigned.'
+            e.add_field(name=f'It\'s {orientation} to move', value=msg, inline=False)
+            msg = 'You can use `/vc status` to check the status on your active matches and see ' \
+                  'who still needs to vote, and use `/vc remind` to tag all players on your team who haven\'t ' \
+                  'voted on the current move.'
+            e.add_field(name='Tips', value=msg, inline=False)
+            e.set_footer(text=EMBED_FOOTER)
+            await ctx.channel.send(embed=e)
+            return
         elif sub_cmd == 'vote':
             if len(args) not in (1, 2):
                 await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
@@ -2348,35 +2347,55 @@ async def vc(ctx, *args):
                     e.set_footer(text=EMBED_FOOTER)
                     await ctx.channel.send(embed=e)
                     return
-        elif sub_cmd == 'status':
+        elif sub_cmd == 'show':
             if len(args) not in (0, 1):
                 await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
                 return
 
             # Either infer the match_code if none is given, or use the user-inputted arg
-            if len(args) == 0:
-                # Get all active matches for this user, past & present
-                code, result = db_query(DB_FILENAME,
-                                        'SELECT match_code, match_name FROM VoteMatches '
-                                        'WHERE match_code IN (SELECT match_code FROM VoteMatchPairings '
-                                        '                     WHERE discord_id LIKE ?)'
-                                        '      AND status IN ("Not Started", "In Progress")',
-                                        params=(str(ctx.message.author),))
-                if code != 0:
-                    await ctx.channel.send('There was a database error :(')
-                    return
-                if not result:
-                    code, result = db_query(DB_FILENAME, 'SELECT match_code, match_name FROM VoteMatches '
-                                                         'WHERE status LIKE "Not Started" '
-                                                         'ORDER BY unix_time_created')
+            if args:
+                match_code = args[0].upper()
+
+                if match_code.lower() == 'me':
+                    # Get all active matches for this user, past & present
+                    code, result = db_query(DB_FILENAME,
+                                            'SELECT match_code, match_name FROM VoteMatches '
+                                            'WHERE match_code IN (SELECT match_code FROM VoteMatchPairings '
+                                            '                     WHERE discord_id LIKE ?)'
+                                            '      AND status IN ("Not Started", "In Progress")',
+                                            params=(str(ctx.message.author),))
                     if code != 0:
                         await ctx.channel.send('There was a database error :(')
                         return
+                    if not result:
+                        code, result = db_query(DB_FILENAME, 'SELECT match_code, match_name FROM VoteMatches '
+                                                             'WHERE status LIKE "Not Started" '
+                                                             'ORDER BY unix_time_created')
+                        if code != 0:
+                            await ctx.channel.send('There was a database error :(')
+                            return
 
-                    msg = f'Usage: {SUB_CMD_USAGE_MSGS["status"]}\n' \
-                          f'You have not joined any Vote Chess matches, so you must specify a match code.\n\n' \
-                          '**Open Vote Chess Matches**'
-                    if result:
+                        msg = f'You have not joined any Vote Chess matches. Try joining one below!\n\n' \
+                              '**Open Vote Chess Matches**'
+                        if result:
+                            for match_code, match_name in result:
+                                code, result = db_query(DB_FILENAME, 'SELECT * FROM VoteMatchPairings '
+                                                                     'WHERE match_code LIKE ?',
+                                                        params=(match_code,))
+                                if code != 0:
+                                    await ctx.channel.send('There was a database error :(')
+                                    return
+                                num_players_joined = len(result)
+                                msg += f'\n> `{match_code}`: "**{match_name}**" ({num_players_joined} joined)'
+                        else:
+                            msg += '\nThere are no open matches. Start one with `/vc create`!'
+
+                        await ctx.channel.send(msg)
+                        return
+                    elif len(result) >= 2:
+                        msg = f'Usage: {SUB_CMD_USAGE_MSGS[sub_cmd]}\n' \
+                              'You are playing in more than one Vote Chess match, so a match code must be specified.' \
+                              '\n\n**Your active Vote Chess matches**'
                         for match_code, match_name in result:
                             code, result = db_query(DB_FILENAME, 'SELECT * FROM VoteMatchPairings '
                                                                  'WHERE match_code LIKE ?',
@@ -2385,266 +2404,254 @@ async def vc(ctx, *args):
                                 await ctx.channel.send('There was a database error :(')
                                 return
                             num_players_joined = len(result)
-                            msg += f'\n> `{match_code}`: "**{match_name}**" ({num_players_joined} joined)'
-                    else:
-                        msg += '\nThere are no open matches. Start one with `/vc create`!'
+                            msg += f'\n> `{match_code}`: "**{match_name}**" ({num_players_joined} players)'
+                        await ctx.channel.send(msg)
+                        return
 
-                    await ctx.channel.send(msg)
-                    return
-                elif len(result) >= 2:
-                    msg = f'Usage: {SUB_CMD_USAGE_MSGS[sub_cmd]}\n' \
-                          'You are playing in more than one Vote Chess match, so a match code must be specified.' \
-                          '\n\n**Your active Vote Chess matches**'
-                    for match_code, match_name in result:
-                        code, result = db_query(DB_FILENAME, 'SELECT * FROM VoteMatchPairings '
-                                                             'WHERE match_code LIKE ?',
-                                                params=(match_code,))
-                        if code != 0:
-                            await ctx.channel.send('There was a database error :(')
-                            return
-                        num_players_joined = len(result)
-                        msg += f'\n> `{match_code}`: "**{match_name}**" ({num_players_joined} players)'
-                    await ctx.channel.send(msg)
-                    return
+                    # User is only in one match - use this as the one to get status for
+                    match_code, match_name = result[0]
+                else:
+                    match_code = args[0].upper()
 
-                # User is only in one match - use this as the one to get status for
-                match_code, match_name = result[0]
-            else:
-                match_code = args[0].upper()
+                    # Make sure match code exists
+                    code, result = db_query(DB_FILENAME, 'SELECT match_name FROM VoteMatches '
+                                                         'WHERE match_code LIKE ?',
+                                            params=(match_code,))
+                    if code != 0:
+                        await ctx.channel.send('There was a database error :(')
+                        return
+                    if not result:
+                        await ctx.channel.send(f'There are no matches with code `{match_code}`. '
+                                               f'Check the code and try again.')
+                        return
+                    assert len(result) == 1, await ctx.channel.send(
+                        f'There was a database integrity error :(. Multiple '
+                        f'matches with match code `{match_code}`')
+                    match_name, = result[0]
 
-                # Make sure match code exists
-                code, result = db_query(DB_FILENAME, 'SELECT match_name FROM VoteMatches '
+                code, result = db_query(DB_FILENAME, 'SELECT pgn, starting_fen, status, hours_between_moves, '
+                                                     'last_move_unix_time, unix_time_created, unix_time_started, '
+                                                     'unix_time_ended, result, termination, hide_votes '
+                                                     'FROM VoteMatches '
                                                      'WHERE match_code LIKE ?',
                                         params=(match_code,))
                 if code != 0:
                     await ctx.channel.send('There was a database error :(')
                     return
                 if not result:
-                    await ctx.channel.send(f'There are no matches with code `{match_code}`. '
-                                           f'Check the code and try again.')
-                    return
+                    raise ValueError('error: bad input validation - match_code should exist here')
                 assert len(result) == 1, await ctx.channel.send(f'There was a database integrity error :(. Multiple '
-                                                                f'matches with match code `{match_code}`')
-                match_name, = result[0]
+                                                                f'matches with match_code `{match_code}`')
 
-            code, result = db_query(DB_FILENAME, 'SELECT pgn, starting_fen, status, hours_between_moves, '
-                                                 'last_move_unix_time, unix_time_created, unix_time_started, '
-                                                 'unix_time_ended, result, termination, hide_votes '
-                                                 'FROM VoteMatches '
-                                                 'WHERE match_code LIKE ?',
-                                    params=(match_code,))
-            if code != 0:
-                await ctx.channel.send('There was a database error :(')
-                return
-            if not result:
-                raise ValueError('error: bad input validation - match_code should exist here')
-            assert len(result) == 1, await ctx.channel.send(f'There was a database integrity error :(. Multiple '
-                                                            f'matches with match_code `{match_code}`')
+                pgn, starting_fen, status, hours_between_moves, last_move_unix_time, unix_time_created, \
+                unix_time_started, unix_time_ended, match_result, termination, hide_votes = result[0]
 
-            pgn, starting_fen, status, hours_between_moves, last_move_unix_time, unix_time_created, \
-            unix_time_started, unix_time_ended, match_result, termination, hide_votes = result[0]
+                if status == 'In Progress':
+                    ''' Get details about the game '''
+                    game = chess.pgn.read_game(io.StringIO(pgn))
+                    current_board = get_current_board(pgn=pgn)
+                    game.setup(current_board)
+                    current_fen = current_board.fen()
+                    current_ply = current_board.ply()
+                    orientation = get_turn(fen=current_fen, as_str=True)
 
-            if status == 'In Progress':
-                ''' Get details about the game '''
-                game = chess.pgn.read_game(io.StringIO(pgn))
-                current_board = get_current_board(pgn=pgn)
-                game.setup(current_board)
-                current_fen = current_board.fen()
-                current_ply = current_board.ply()
-                orientation = get_turn(fen=current_fen, as_str=True)
+                    ''' Get a list of Discord usernames of players who HAVE NOT voted '''
+                    code, result = db_query(DB_FILENAME, 'SELECT discord_id FROM VoteMatchPairings '
+                                                         'WHERE match_code LIKE ? '
+                                                         '      AND side IN (?, "Both") '
+                                                         '      AND discord_id NOT IN (SELECT discord_id '
+                                                         '                             FROM VoteMatchVotes '
+                                                         '                             WHERE match_code LIKE ? '
+                                                         '                                   AND ply_count = ? '
+                                                         '                                   AND vote IS NOT NULL)',
+                                            params=(match_code, orientation.capitalize(), match_code, current_ply))
+                    if code != 0:
+                        await ctx.channel.send('There was a database error :(')
+                        return
+                    if result:
+                        waiting_on_str = '\n'.join([f'> {plr}' for plr, in result])
+                        num_waiting_on = len(result)
+                    else:
+                        waiting_on_str = 'Everyone has voted.\n' + '\n'.join([f'> {plr}' for plr, in result])
+                        num_waiting_on = 0
 
-                ''' Get a list of Discord usernames of players who HAVE NOT voted '''
-                code, result = db_query(DB_FILENAME, 'SELECT discord_id FROM VoteMatchPairings '
-                                                     'WHERE match_code LIKE ? '
-                                                     '      AND side IN (?, "Both") '
-                                                     '      AND discord_id NOT IN (SELECT discord_id '
-                                                     '                             FROM VoteMatchVotes '
-                                                     '                             WHERE match_code LIKE ? '
-                                                     '                                   AND ply_count = ? '
-                                                     '                                   AND vote IS NOT NULL)',
-                                        params=(match_code, orientation.capitalize(), match_code, current_ply))
-                if code != 0:
-                    await ctx.channel.send('There was a database error :(')
-                    return
-                if result:
-                    waiting_on_str = '\n'.join([f'> {plr}' for plr, in result])
-                    num_waiting_on = len(result)
-                else:
-                    waiting_on_str = 'Everyone has voted.\n' + '\n'.join([f'> {plr}' for plr, in result])
-                    num_waiting_on = 0
+                    # Get a list of Discord usernames of players who HAVE voted
+                    code, result = db_query(DB_FILENAME, 'SELECT discord_id FROM VoteMatchPairings '
+                                                         'WHERE match_code = ? '
+                                                         'AND side IN (?, "Both") '
+                                                         'AND discord_id IN (SELECT discord_id FROM VoteMatchVotes '
+                                                         '                   WHERE match_code LIKE ? '
+                                                         '                         AND ply_count = ? '
+                                                         '                         AND vote IS NOT NULL)',
+                                            params=(match_code, orientation.capitalize(), match_code, current_ply))
+                    if code != 0:
+                        await ctx.channel.send('There was a database error :(')
+                        return
+                    if result:
+                        already_voted_str = '\n'.join([f'> {plr}' for plr, in result])
+                        num_already_voted = len(result)
+                    else:
+                        already_voted_str = 'No votes yet'
+                        num_already_voted = 0
 
-                # Get a list of Discord usernames of players who HAVE voted
-                code, result = db_query(DB_FILENAME, 'SELECT discord_id FROM VoteMatchPairings '
-                                                     'WHERE match_code = ? '
-                                                     'AND side IN (?, "Both") '
-                                                     'AND discord_id IN (SELECT discord_id FROM VoteMatchVotes '
-                                                     '                   WHERE match_code LIKE ? '
-                                                     '                         AND ply_count = ? '
-                                                     '                         AND vote IS NOT NULL)',
-                                        params=(match_code, orientation.capitalize(), match_code, current_ply))
-                if code != 0:
-                    await ctx.channel.send('There was a database error :(')
-                    return
-                if result:
-                    already_voted_str = '\n'.join([f'> {plr}' for plr, in result])
-                    num_already_voted = len(result)
-                else:
-                    already_voted_str = 'No votes yet'
-                    num_already_voted = 0
-
-                ''' Get a string showing the 3 most recent moves (6 plies) '''
-                # ex. `10... Ne4 11. cxd5 cxd5 12. Qc2 O-O 13. O-O`
-                recent_moves = ''
-                mainline_moves = list(game.mainline_moves())
-                temp_board = chess.Board(starting_fen)
-                for i, move in enumerate(mainline_moves):
-                    if i >= len(mainline_moves) - 6:
-                        # This is one of the most recent 6 moves
-                        san = temp_board.san(move)
-                        move_num_str = format_move_number(ply=temp_board.ply())
-                        if temp_board.turn == chess.BLACK:
-                            if not recent_moves:
-                                # Add number before black move if it's the first move added
-                                recent_moves += f'{move_num_str}{san} '
+                    ''' Get a string showing the 3 most recent moves (6 plies) '''
+                    # ex. `10... Ne4 11. cxd5 cxd5 12. Qc2 O-O 13. O-O`
+                    recent_moves = ''
+                    mainline_moves = list(game.mainline_moves())
+                    temp_board = chess.Board(starting_fen)
+                    for i, move in enumerate(mainline_moves):
+                        if i >= len(mainline_moves) - 6:
+                            # This is one of the most recent 6 moves
+                            san = temp_board.san(move)
+                            move_num_str = format_move_number(ply=temp_board.ply())
+                            if temp_board.turn == chess.BLACK:
+                                if not recent_moves:
+                                    # Add number before black move if it's the first move added
+                                    recent_moves += f'{move_num_str}{san} '
+                                else:
+                                    # Don't add move number for black, there's one for white's move before
+                                    recent_moves += f'{san} '
                             else:
-                                # Don't add move number for black, there's one for white's move before
-                                recent_moves += f'{san} '
+                                # Always add move num for white
+                                recent_moves += f'{move_num_str}{san} '
+                        temp_board.push(move)
+                    recent_moves = recent_moves.strip()
+
+                    ''' Get lists of team members '''
+                    code, result = db_query(DB_FILENAME, 'SELECT discord_id, side FROM VoteMatchPairings '
+                                                         'WHERE match_code LIKE ?',
+                                            params=(match_code,))
+                    if code != 0:
+                        await ctx.channel.send('There was a database error :(')
+                        return
+                    assert result, await ctx.channel.send('There was a database integrity error :(. Game status is "In '
+                                                          'Progress" but has no joined players')
+                    players_by_side = defaultdict(list)
+                    for discord_id, side in result:
+                        side = side.lower()
+                        assert side != 'random', await ctx.channel.send(
+                            'There was a database integrity error :(. Player '
+                            'side was "Random" even though it should have '
+                            'changed when the match started')
+                        if side in ('white', 'black'):
+                            players_by_side[side].append(discord_id)
+                        elif side == 'both':
+                            players_by_side['white'].append(discord_id)
+                            players_by_side['black'].append(discord_id)
                         else:
-                            # Always add move num for white
-                            recent_moves += f'{move_num_str}{san} '
-                    temp_board.push(move)
-                recent_moves = recent_moves.strip()
+                            await ctx.channel.send(
+                                f'There was a database integrity error :(. Unknown `side` "{side}" for '
+                                f'match pairing (match_code=`{match_code}`, discord_id={discord_id})')
+                            return
+                    white_players = players_by_side['white']
+                    black_players = players_by_side['black']
 
-                ''' Get lists of team members '''
-                code, result = db_query(DB_FILENAME, 'SELECT discord_id, side FROM VoteMatchPairings '
-                                                     'WHERE match_code LIKE ?',
-                                        params=(match_code,))
-                if code != 0:
-                    await ctx.channel.send('There was a database error :(')
-                    return
-                assert result, await ctx.channel.send('There was a database integrity error :(. Game status is "In '
-                                                      'Progress" but has no joined players')
-                players_by_side = defaultdict(list)
-                for discord_id, side in result:
-                    side = side.lower()
-                    assert side != 'random', await ctx.channel.send('There was a database integrity error :(. Player '
-                                                                    'side was "Random" even though it should have '
-                                                                    'changed when the match started')
-                    if side in ('white', 'black'):
-                        players_by_side[side].append(discord_id)
-                    elif side == 'both':
-                        players_by_side['white'].append(discord_id)
-                        players_by_side['black'].append(discord_id)
-                    else:
-                        await ctx.channel.send(f'There was a database integrity error :(. Unknown `side` "{side}" for '
-                                               f'match pairing (match_code=`{match_code}`, discord_id={discord_id})')
+                    ''' Build final Embed message '''
+                    e = discord.Embed(title=f'Match `{match_code}`: "**{match_name}**"',
+                                      color=(0x000000, 0xFFFFFF)[orientation == 'white'])
+                    e.set_author(name=bot.user.name,
+                                 url=LINK_TO_CODE,
+                                 icon_url=bot.user.avatar_url)
+                    e.set_image(url=get_board_image(current_fen, orientation))
+                    e.add_field(name=f'Waiting on ({num_waiting_on})', value=waiting_on_str, inline=True)
+                    e.add_field(name=f'Already voted ({num_already_voted})', value=already_voted_str, inline=True)
+                    e.add_field(name=f'**Move {to_fullmoves(plies=current_ply)}**: {orientation.capitalize()} to move',
+                                value='Recent moves:\n' + (f'> {recent_moves}' if recent_moves else '> No moves yet.'),
+                                inline=False)
+                    e.add_field(name='⬜  White Team  ⬜   ', value='\n'.join([f'> {p}' for p in white_players]),
+                                inline=True)
+                    e.add_field(name='⬛  Black Team  ⬛   ', value='\n'.join([f'> {p}' for p in black_players]),
+                                inline=True)
+                    e.set_footer(text=EMBED_FOOTER)
+                    await ctx.channel.send(embed=e)
+                elif status == 'Not Started':
+                    game = chess.pgn.read_game(io.StringIO(pgn))
+                    current_board = get_current_board(pgn=pgn)
+                    game.setup(current_board)
+                    current_fen = current_board.fen()
+                    orientation = get_turn(fen=current_fen, as_str=True)
+
+                    ''' Get lists of all players in this match '''
+                    code, result = db_query(DB_FILENAME, 'SELECT discord_id, side FROM VoteMatchPairings '
+                                                         'WHERE match_code LIKE ?',
+                                            params=(match_code,))
+                    if code != 0:
+                        await ctx.channel.send('There was a database error :(')
                         return
-                white_players = players_by_side['white']
-                black_players = players_by_side['black']
+                    assert result, await ctx.channel.send('There was a database integrity error :(. Game status is "In '
+                                                          'Progress" but has no joined players')
+                    players_by_side = defaultdict(list)
+                    for discord_id, side in result:
+                        side = side.lower()
+                        if side in ('white', 'black', 'random'):
+                            players_by_side[side].append(discord_id)
+                        elif side == 'both':
+                            players_by_side['white'].append(discord_id)
+                            players_by_side['black'].append(discord_id)
+                        else:
+                            await ctx.channel.send(
+                                f'There was a database integrity error :(. Unknown `side` "{side}" for '
+                                f'match pairing (match_code=`{match_code}`, discord_id={discord_id})')
+                            return
+                    white_players = players_by_side['white']
+                    black_players = players_by_side['black']
+                    random_players = players_by_side['random']
 
-                ''' Build final Embed message '''
-                e = discord.Embed(title=f'Match `{match_code}`: "**{match_name}**"',
-                                  color=(0x000000, 0xFFFFFF)[orientation == 'white'])
-                e.set_author(name=bot.user.name,
-                             url=LINK_TO_CODE,
-                             icon_url=bot.user.avatar_url)
-                e.set_image(url=get_board_image(current_fen, orientation))
-                e.add_field(name=f'Waiting on ({num_waiting_on})', value=waiting_on_str, inline=True)
-                e.add_field(name=f'Already voted ({num_already_voted})', value=already_voted_str, inline=True)
-                e.add_field(name=f'**Move {to_fullmoves(plies=current_ply)}**: {orientation.capitalize()} to move',
-                            value='Recent moves:\n' + (f'> {recent_moves}' if recent_moves else '> No moves yet.'),
-                            inline=False)
-                e.add_field(name='⬜  White Team  ⬜   ', value='\n'.join([f'> {p}' for p in white_players]), inline=True)
-                e.add_field(name='⬛  Black Team  ⬛   ', value='\n'.join([f'> {p}' for p in black_players]), inline=True)
-                e.set_footer(text=EMBED_FOOTER)
-                await ctx.channel.send(embed=e)
-            elif status == 'Not Started':
-                game = chess.pgn.read_game(io.StringIO(pgn))
-                current_board = get_current_board(pgn=pgn)
-                game.setup(current_board)
-                current_fen = current_board.fen()
-                orientation = get_turn(fen=current_fen, as_str=True)
+                    ''' Build final Embed message '''
+                    e = discord.Embed(title=f'Match `{match_code}`: "**{match_name}**"',
+                                      color=discord.colour.Color.blue())
+                    e.set_author(name=bot.user.name,
+                                 url=LINK_TO_CODE,
+                                 icon_url=bot.user.avatar_url)
+                    e.set_thumbnail(url=get_board_image(current_fen, orientation))
+                    e.add_field(name='Status: Not Started',
+                                value=f'When all players have joined, use `/vc start {match_code}`.',
+                                inline=False)
+                    # White
+                    lines = [f'> {discord_id}' for discord_id in white_players]
+                    e.add_field(name='⬜  White Team  ⬜   ', value='\n'.join(lines) if lines else '> None yet',
+                                inline=True)
+                    # Black
+                    lines = [f'> {discord_id}' for discord_id in black_players]
+                    e.add_field(name='⬛  Black Team  ⬛   ', value='\n'.join(lines) if lines else '> None yet',
+                                inline=True)
+                    # Random
+                    msg = 'These players will randomly balance teams when the match starts.\n'
+                    lines = [f'> {discord_id}' for discord_id in random_players]
+                    e.add_field(name='🎯  Random Team  🎯   ',
+                                value=(msg + ('\n'.join(lines) if lines else '> None yet')),
+                                inline=False)
+                    e.set_footer(text=EMBED_FOOTER)
+                    await ctx.channel.send(embed=e)
+                elif status == 'Aborted':
+                    game = chess.pgn.read_game(io.StringIO(pgn))
+                    current_board = get_current_board(pgn=pgn)
+                    game.setup(current_board)
+                    current_fen = current_board.fen()
+                    orientation = get_turn(fen=current_fen, as_str=True)
 
-                ''' Get lists of all players in this match '''
-                code, result = db_query(DB_FILENAME, 'SELECT discord_id, side FROM VoteMatchPairings '
-                                                     'WHERE match_code LIKE ?',
-                                        params=(match_code,))
-                if code != 0:
-                    await ctx.channel.send('There was a database error :(')
-                    return
-                assert result, await ctx.channel.send('There was a database integrity error :(. Game status is "In '
-                                                      'Progress" but has no joined players')
-                players_by_side = defaultdict(list)
-                for discord_id, side in result:
-                    side = side.lower()
-                    if side in ('white', 'black', 'random'):
-                        players_by_side[side].append(discord_id)
-                    elif side == 'both':
-                        players_by_side['white'].append(discord_id)
-                        players_by_side['black'].append(discord_id)
-                    else:
-                        await ctx.channel.send(f'There was a database integrity error :(. Unknown `side` "{side}" for '
-                                               f'match pairing (match_code=`{match_code}`, discord_id={discord_id})')
-                        return
-                white_players = players_by_side['white']
-                black_players = players_by_side['black']
-                random_players = players_by_side['random']
+                    ''' Build final Embed message '''
+                    e = discord.Embed(title=f'Status Report: Match `{match_code}`: "**{match_name}**"',
+                                      color=discord.colour.Color.blue())
+                    e.set_author(name=bot.user.name,
+                                 url=LINK_TO_CODE,
+                                 icon_url=bot.user.avatar_url)
+                    e.set_image(url=get_board_image(current_fen, orientation))
+                    e.add_field(name='Status: Aborted', value='No moves were played.', inline=False)
+                    e.set_footer(text=EMBED_FOOTER)
+                    await ctx.channel.send(embed=e)
+                elif status == 'Abandoned':
+                    await ctx.channel.send(
+                        'Not yet implemented for Abandoned matches. DM @Cubigami and the issue can be '
+                        'resolved manually.')
+                elif status == 'Complete':
+                    await ctx.channel.send(
+                        'Not yet implemented for Completed matches. DM @Cubigami and the issue can be '
+                        'resolved manually.')
+                else:
+                    await ctx.channel.send(f'Cannot join match `{match_code}`: match has unknown status "{status}". '
+                                           f'DM @Cubigami and the issue can be resolved manually.')
 
-                ''' Build final Embed message '''
-                e = discord.Embed(title=f'Match `{match_code}`: "**{match_name}**"',
-                                  color=discord.colour.Color.blue())
-                e.set_author(name=bot.user.name,
-                             url=LINK_TO_CODE,
-                             icon_url=bot.user.avatar_url)
-                e.set_thumbnail(url=get_board_image(current_fen, orientation))
-                e.add_field(name='Status: Not Started',
-                            value=f'When all players have joined, use `/vc start {match_code}`.',
-                            inline=False)
-                # White
-                lines = [f'> {discord_id}' for discord_id in white_players]
-                e.add_field(name='⬜  White Team  ⬜   ', value='\n'.join(lines) if lines else '> None yet', inline=True)
-                # Black
-                lines = [f'> {discord_id}' for discord_id in black_players]
-                e.add_field(name='⬛  Black Team  ⬛   ', value='\n'.join(lines) if lines else '> None yet', inline=True)
-                # Random
-                msg = 'These players will randomly balance teams when the match starts.\n'
-                lines = [f'> {discord_id}' for discord_id in random_players]
-                e.add_field(name='🎯  Random Team  🎯   ', value=(msg + ('\n'.join(lines) if lines else '> None yet')),
-                            inline=False)
-                e.set_footer(text=EMBED_FOOTER)
-                await ctx.channel.send(embed=e)
-            elif status == 'Aborted':
-                game = chess.pgn.read_game(io.StringIO(pgn))
-                current_board = get_current_board(pgn=pgn)
-                game.setup(current_board)
-                current_fen = current_board.fen()
-                orientation = get_turn(fen=current_fen, as_str=True)
-
-                ''' Build final Embed message '''
-                e = discord.Embed(title=f'Status Report: Match `{match_code}`: "**{match_name}**"',
-                                  color=discord.colour.Color.blue())
-                e.set_author(name=bot.user.name,
-                             url=LINK_TO_CODE,
-                             icon_url=bot.user.avatar_url)
-                e.set_image(url=get_board_image(current_fen, orientation))
-                e.add_field(name='Status: Aborted', value='No moves were played.', inline=False)
-                e.set_footer(text=EMBED_FOOTER)
-                await ctx.channel.send(embed=e)
-            elif status == 'Abandoned':
-                await ctx.channel.send('Not yet implemented for Abandoned matches. DM @Cubigami and the issue can be '
-                                       'resolved manually.')
-                return
-            elif status == 'Complete':
-                await ctx.channel.send('Not yet implemented for Completed matches. DM @Cubigami and the issue can be '
-                                       'resolved manually.')
-                return
-            else:
-                await ctx.channel.send(f'Cannot join match `{match_code}`: match has unknown status "{status}". '
-                                       f'DM @Cubigami and the issue can be resolved manually.')
-                return
-        elif sub_cmd == 'show':
-            if len(args) != 0:
-                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
                 return
 
             # Get details about all active matches
