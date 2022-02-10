@@ -63,11 +63,15 @@ def db_query(db_name: str,
              do_log=LOG,
              log_filename=LOG_FILENAME,
              debug=DEBUG,
-             verbose=VERBOSE):
+             verbose=VERBOSE) \
+        -> Tuple[int, List[Any]]:
     """
     Connect with the given sqlite3 database and execute a query. Return a
     custom exit code and cur.fetchall() for the command.
     """
+
+    # Remove large spaces in the query
+    query = ' '.join(query.split())
 
     # Open connection
     con = sqlite3.connect(db_name)
@@ -102,12 +106,12 @@ def db_query(db_name: str,
     log_str = f'db_query(db_name={db_name},query={query},params={params}) called'
     if exit_code == 0:
         if DEBUG and VERBOSE:
-            print(f'Query `{query}` in database `{db_name}` with params {params} succeeded')
+            print(f'Query succeeded: `{query}` in database `{db_name}` with params {params}')
         log_str += '\nQuery succeeded'
     else:
         if DEBUG:
-            print(f'Error: couldn\'t execute query `{query}` with params {params} in database {db_name}')
-            print('Stack trace:\n', err)
+            print(f'-----> QUERY FAILED: `{query}` with params {params} in database {db_name}')
+            print(f'Stack trace:\n{err}')
         log_str += f'\nQuery failed with exit code 1. Stack trace:\n{err}'
 
     if do_log:
@@ -121,7 +125,7 @@ def get_board_image(fen: str,
                     last_move_uci: str = None) -> str:
     """ Get a URL for a PNG image of a chess board with the given FEN highlighting the last move. """
     # Validate fen
-    b = chess.Board(fen)
+    chess.Board(fen)
 
     # Truncate FEN to just the board layout part
     fen_trunc = fen[:fen.find(' ')]
@@ -352,12 +356,16 @@ async def on_ready():
 
 @bot.command(brief='Says hello')
 async def hello(ctx):
-    import time
+    # import time
     msg = await ctx.channel.send('Hello!')
+    # embed = discord.Embed(title="Sample Embed", url="https://realdrewdata.medium.com/",
+    #                       description="This is an embed that will show how to build an embed and the different components",
+    #                       color=0xFF5733)
+    # await ctx.send(embed=embed)
     if VERBOSE:
         print('`hello()` run!')
-    time.sleep(5)
-    await msg.edit(content='Hello! (test)')
+    # time.sleep(5)
+    # await msg.edit(content='Hello! (test)')
 
 
 @bot.command(brief='Add a username to names in /show')
@@ -391,7 +399,6 @@ async def add(ctx, *args):
         code, _ = db_query(DB_FILENAME,
                            'INSERT INTO ChessUsernames(username, site) VALUES (?, "lichess.org")',
                            params=(username_proper_caps,))
-
         if code == 0:
             await ctx.channel.send(f'Added `{username_proper_caps}` (Lichess) to the database. '
                                    f'Use `/show` to see who\'s online!')
@@ -431,13 +438,16 @@ async def remove(ctx, *args):
         await remove(ctx, username, 'chess.com')
         return
 
-    if site.lower() =='lichess':
+    if site.lower() == 'lichess':
         queried_site = site
         if site == 'lichess':
             queried_site = 'lichess.org'
-        _, result = db_query(DB_FILENAME,
-                             'SELECT username FROM ChessUsernames WHERE username LIKE ? AND site LIKE ?',
-                             params=(username, queried_site))
+        code, result = db_query(DB_FILENAME,
+                                'SELECT username FROM ChessUsernames WHERE username LIKE ? AND site LIKE ?',
+                                params=(username, queried_site))
+        if code != 0:
+            await ctx.channel.send('There was a database error :(')
+            return
 
         if not result:
             # No users in DB result -> not a valid username
@@ -445,15 +455,14 @@ async def remove(ctx, *args):
             await ctx.channel.send(f'`{username}` was not in the database.')
         else:
             # Remove the username
-            username_proper_caps = result[0][0]
+            username_proper_caps, = result[0]
             code, result = db_query(DB_FILENAME, 'DELETE FROM ChessUsernames WHERE username = ? AND site = ?',
                                     params=(username_proper_caps, queried_site))
+            if code != 0:
+                await ctx.channel.send('There was a database error :(')
+                return
 
-            if code == 0:
-                await ctx.channel.send(f'Removed `{username_proper_caps}` (Lichess) from the database.')
-            else:
-                await ctx.channel.send(f'There was an error removing {username_proper_caps} from the database. '
-                                       f'DM @Cubigami and it can be removed manually.')
+            await ctx.channel.send(f'Removed `{username_proper_caps}` (Lichess) from the database.')
             return
 
     if site.lower() == 'chess.com':
@@ -476,24 +485,27 @@ async def iam(ctx, *args):
         username = args[0]
 
         # Make sure username is in the database
-        _, result = db_query(DB_FILENAME,
-                             'SELECT username FROM ChessUsernames WHERE username LIKE ?',
-                             params=args)
+        code, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames '
+                                             'WHERE username LIKE ?',
+                                params=(username,))
+        if code != 0:
+            await ctx.channel.send('There was a database error :(')
+            return
         if not result:
             await ctx.channel.send(f'`{username}` isn\'t in the database. Use `/add {username}` to add them first.')
             return
 
         # Update the discord_id for the username
         discord_id = str(ctx.message.author)
-        username = result[0][0]  # Has proper caps
-        code, _ = db_query(DB_FILENAME,
-                           'UPDATE ChessUsernames SET discord_id = ? WHERE username = ?',
+        username, = result[0]  # Has proper caps
+        code, _ = db_query(DB_FILENAME, 'UPDATE ChessUsernames SET discord_id = ? '
+                                        'WHERE username = ?',
                            params=(discord_id, username))
+        if code != 0:
+            await ctx.channel.send('There was a database error :(')
+            return
 
-        if code == 0:
-            await ctx.channel.send(f'Linked `{username}` to `{discord_id}`.')
-        else:
-            await ctx.channel.send(f'A database error occurred. DM @Cubigami and it can be resolved manually.')
+        await ctx.channel.send(f'Linked `{username}` to `{discord_id}`. Use `/show` to see your status!')
 
 
 @bot.command(brief='Unlink your Discord account from a Lichess username.')
@@ -508,26 +520,31 @@ async def iamnot(ctx, *args):
         username = args[0]
 
         # Make sure username is in the database
-        _, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames WHERE username LIKE ?',
-                             params=(username,))
+        code, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames '
+                                             'WHERE username LIKE ?',
+                                params=(username,))
+        if code != 0:
+            await ctx.channel.send('There was a database error :(')
+            return
         if not result:
             await ctx.channel.send(f'`{username}` isn\'t in the database.')
             return
 
         # Update the discord_id for the username
         discord_id = str(ctx.message.author)
-        username = result[0][0]  # Has proper caps
-        code, _ = db_query(DB_FILENAME, 'UPDATE ChessUsernames SET discord_id = NULL WHERE username LIKE ?',
+        username, = result[0]  # Has proper caps
+        code, _ = db_query(DB_FILENAME, 'UPDATE ChessUsernames SET discord_id = NULL '
+                                        'WHERE username LIKE ?',
                            params=(username,))
+        if code != 0:
+            await ctx.channel.send('There was a database error :(')
+            return
 
-        if code == 0:
-            await ctx.channel.send(f'Removed link from `{username}` to `{discord_id}`.')
-        else:
-            await ctx.channel.send(f'A database error occurred. DM @Cubigami and it can be resolved manually.')
+        await ctx.channel.send(f'Removed link from `{username}` to `{discord_id}`.')
 
 
-@bot.command(brief='Show all chess accounts linked to the specified Discord account, or show the Discord ID linked '
-                   'to a chess account')
+@bot.command(brief='Show all chess accounts linked to the specified Discord account, '
+                   'or show the Discord ID linked to a chess account')
 async def whois(ctx, *args):
     """ Show linked chess account(s) of the specified Discord ID or vice versa. """
 
@@ -542,8 +559,12 @@ async def whois(ctx, *args):
         if '#' in args[0]:
             discord_id = args[0]
 
-            _, result = db_query(DB_FILENAME, 'SELECT discord_id, username FROM ChessUsernames WHERE discord_id LIKE ?',
-                                 params=(discord_id,))
+            code, result = db_query(DB_FILENAME, 'SELECT discord_id, username FROM ChessUsernames '
+                                                 'WHERE discord_id LIKE ?',
+                                    params=(discord_id,))
+            if code != 0:
+                await ctx.channel.send('There was a database error :(')
+                return
             if not result:
                 await ctx.channel.send(f'`{discord_id}` isn\'t a Discord username in the database.')
                 return
@@ -558,8 +579,13 @@ async def whois(ctx, *args):
         else:
             username = args[0]
 
-            _, result = db_query(DB_FILENAME, 'SELECT discord_id, username FROM ChessUsernames WHERE username LIKE ?',
-                                 params=(username,))
+            code, result = db_query(DB_FILENAME,
+                                    'SELECT discord_id, username FROM ChessUsernames '
+                                    'WHERE username LIKE ?',
+                                    params=(username,))
+            if code != 0:
+                await ctx.channel.send('There was a database error :(')
+                return
             if not result:
                 await ctx.channel.send(f'`{username}` isn\'t a chess username in the database.')
                 return
@@ -575,21 +601,25 @@ async def whois(ctx, *args):
 @bot.command(brief='Show accounts you have connected to your Discord ID')
 async def whoami(ctx, *args):
     """ Show connected account(s) of the specified player. """
-
     async with ctx.channel.typing():
         if len(args) != 0:
             await ctx.channel.send('Usage: `/whoami`')
             return
 
         discord_id = str(ctx.message.author)
-        _, result = db_query(DB_FILENAME, 'SELECT discord_id, username FROM ChessUsernames WHERE discord_id LIKE ?',
-                             params=(discord_id,))
+        code, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames '
+                                             'WHERE discord_id LIKE ?',
+                                params=(discord_id,))
+        if code != 0:
+            await ctx.channel.send('There was a database error :(')
+            return
         if not result:
-            await ctx.channel.send(f'Your Discord account `{discord_id}` isn\'t anywhere in the database.')
+            await ctx.channel.send(f'You haven\'t linked any chess accounts to `{discord_id}`. Use `/iam <username>` '
+                                   f'to add one!')
             return
 
-        response = f'You have linked the following chess accounts to `{discord_id}`:\n'
-        for _, username in result:
+        response = f'You have linked the following chess accounts to `{discord_id}`:'
+        for username in result:
             response += f'\n - `{username}` (Lichess)'
 
         await ctx.channel.send(response)
@@ -610,28 +640,39 @@ async def show(ctx, *args):
 
         # Get all users in the database
         if len(args) == 1:
-            if args[0].lower() == 'me':
+            username = args[0].lower()
+            if username == 'me':
                 code, result = db_query(DB_FILENAME,
-                                        'SELECT username FROM ChessUsernames WHERE discord_id = ?',
+                                        'SELECT username FROM ChessUsernames '
+                                        'WHERE discord_id = ?',
                                         params=(str(ctx.message.author),))
+                if code != 0:
+                    await ctx.channel.send('There was a database error :(')
+                    return
                 if not result:
                     await ctx.channel.send('You have no Lichess or Chess.com usernames linked to '
                                            'your Discord account. Use `/iam <username>` to link some.')
                     return
                 else:
-                    usernames = [e[0] for e in result]
+                    usernames = [e for e, in result]
             else:
-                code, result = db_query(DB_FILENAME,
-                                        'SELECT username FROM ChessUsernames WHERE username LIKE ?',
-                                        params=args)
-                usernames = args
+                code, _ = db_query(DB_FILENAME, 'SELECT * FROM ChessUsernames '
+                                                'WHERE username LIKE ?',
+                                   params=(username,))
+                if code != 0:
+                    await ctx.channel.send('There was a database error :(')
+                    return
+                usernames = [username]
         elif len(args) >= 2:
             await ctx.channel.send('Usage: `/show [<username>]`')
             return
         else:
-            code, result = db_query(DB_FILENAME,
-                                    'SELECT username FROM ChessUsernames ORDER BY username')
-            usernames = [e[0] for e in result]
+            code, result = db_query(DB_FILENAME, 'SELECT username FROM ChessUsernames '
+                                                 'ORDER BY username')
+            if code != 0:
+                await ctx.channel.send('There was a database error :(')
+                return
+            usernames = [e for e, in result]
 
         # Send request for all usernames - only valid usernames will be returned
         # (and valid ones will be returned with proper capitalization)
@@ -736,7 +777,7 @@ async def show(ctx, *args):
             e.add_field(name='Offline  💤', value='\n'.join(lines), inline=False)
 
         # Footer
-        e.set_footer(text=featured_game_desc+EMBED_FOOTER)
+        e.set_footer(text=featured_game_desc + EMBED_FOOTER)
 
         # Send the final message
         await ctx.channel.send(embed=e)
@@ -746,7 +787,7 @@ async def show(ctx, *args):
 async def play(ctx, *args):
     async with ctx.channel.typing():
         # Sent when weeding out badly formatted commands
-        USAGE = 'Usage: `/play [<min>+<sec>] [rated]`'
+        USAGE_MSG = 'Usage: `/play [<min>+<sec>] [rated]`'
 
         # Set default time format if none is specified
         DEFAULT_TIME_FORMAT = '10+5'
@@ -764,15 +805,15 @@ async def play(ctx, *args):
         elif len(args) == 2:
             time_format, rated = args
         else:
-            await ctx.channel.send(USAGE)
+            await ctx.channel.send(USAGE_MSG)
             return
 
         if rated.lower() not in ('rated', 'casual'):
-            await ctx.channel.send(USAGE)
+            await ctx.channel.send(USAGE_MSG)
             return
 
         if '+' not in time_format or time_format == '0+0':
-            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
+            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE_MSG}')
             return
 
         minutes, seconds = time_format.split('+')
@@ -784,7 +825,7 @@ async def play(ctx, *args):
         if '/' in seconds \
                 or ('/' in minutes and minutes not in fraction_formats) \
                 or ('/' not in minutes and not re.match('^[0-9]{0,3}\+[0-9]{1,3}$', time_format.strip())):
-            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
+            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE_MSG}')
             return
 
         # Time format parts: clock_limit+clock_inc
@@ -797,13 +838,13 @@ async def play(ctx, *args):
             try:
                 clock_limit = int(minutes) * 60
             except ValueError:
-                await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
+                await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE_MSG}')
                 return
         # Convert seconds to clock_inc
         try:
             clock_inc = int(seconds)
         except ValueError:
-            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE}')
+            await ctx.channel.send(f'Error: invalid time format `{time_format}`. {USAGE_MSG}')
             return
 
         # Validate clock_limit, clock_inc
@@ -838,7 +879,8 @@ async def play(ctx, *args):
         black_link = response['urlBlack']
         time_format_shown = response['challenge']['timeControl']['show']
         e = discord.Embed(title=f'Created game `{game_id}`: a {time_format_shown} '
-                                f'{["casual", "rated"][is_rated]} challenge')
+                                f'{["casual", "rated"][is_rated]} challenge',
+                          color=discord.colour.Color.blue())
         e.set_author(name=bot.user.name,
                      url=LINK_TO_CODE,
                      icon_url=bot.user.avatar_url)
@@ -1569,7 +1611,6 @@ async def vc(ctx, *args):
                 return
 
             if move_vote.lower() in ('draw', 'resign'):
-                ''' Handle draw/resign offers '''
                 move_vote = move_vote.lower()
 
                 ''' See if user already voted to draw/resign, if so tell them they already voted '''
