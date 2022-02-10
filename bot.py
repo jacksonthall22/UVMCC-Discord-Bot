@@ -1017,7 +1017,7 @@ async def vc(ctx, *args):
                 await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
                 return
 
-            match_code = args[0]
+            match_code = args[0].upper()
 
             code, result = db_query(DB_FILENAME, 'SELECT status FROM VoteMatches '
                                                  'WHERE match_code LIKE ?',
