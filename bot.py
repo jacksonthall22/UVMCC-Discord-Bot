@@ -251,11 +251,14 @@ async def on_ready():
         print('DELETING & RESETTING VOTE CHESS TABLES')
 
         DROP_QUERIES = [
-            'DROP TABLE MatchStatuses',
-            'DROP TABLE MatchSides',
             'DROP TABLE VoteMatches',
             'DROP TABLE VoteMatchPairings',
             'DROP TABLE VoteMatchVotes',
+            'DROP TABLE VoteMatchDrawOffers',
+            'DROP TABLE MatchStatuses',
+            'DROP TABLE MatchSides',
+            'DROP TABLE MatchResults',
+            'DROP TABLE MatchTerminations',
         ]
         for q in DROP_QUERIES:
             db_query(DB_FILENAME, q)
