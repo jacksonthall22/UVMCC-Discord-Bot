@@ -972,7 +972,7 @@ async def vc(ctx, *args):
                 except ValueError:
                     await ctx.channel.send(
                         f'Error: invalid FEN "{starting_fen}". Make sure FEN is in quotes.\n' +
-                        f'Usage: ' + SUB_CMD_USAGE_MSGS['create'])
+                        f'Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
                     return
 
             # Get a unique match code
@@ -1014,7 +1014,7 @@ async def vc(ctx, *args):
             await ctx.channel.send(embed=e)
         elif sub_cmd == 'abort':
             if len(args) != 1:
-                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS['abort'])
+                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
                 return
 
             match_code = args[0]
@@ -1077,7 +1077,7 @@ async def vc(ctx, *args):
                     else:
                         msg += '\nThere are no open matches. Start one with `/vc create`!'
 
-                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS['join'] + msg)
+                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd] + msg)
                 return
 
             # Make sure match exists
@@ -1106,7 +1106,7 @@ async def vc(ctx, *args):
                         await ctx.channel.send('There was a database error :(')
                         return
                     if not result:
-                        await ctx.channel.send(f'Invalid option "{side}". Usage: ' + SUB_CMD_USAGE_MSGS['join'])
+                        await ctx.channel.send(f'Invalid option "{side}". Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
                         return
                 else:
                     side = 'random'
@@ -1178,7 +1178,7 @@ async def vc(ctx, *args):
                                        f'DM @Cubigami and the issue can be resolved manually.')
         elif sub_cmd == 'leave':
             if len(args) != 1:
-                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS['leave'])
+                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
                 return
 
             match_code = args[0].upper()
@@ -1280,7 +1280,7 @@ async def vc(ctx, *args):
                                        f'> `{match_code}`: "**{match_name}**"')
         elif sub_cmd == 'start':
             if len(args) != 1:
-                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS['start'])
+                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
                 return
             match_code = args[0].upper()
 
@@ -1459,7 +1459,7 @@ async def vc(ctx, *args):
                 return
         elif sub_cmd == 'vote':
             if len(args) not in (1, 2):
-                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS['vote'])
+                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
                 return
             move_vote = args[0]
 
@@ -2338,7 +2338,7 @@ async def vc(ctx, *args):
                     return
         elif sub_cmd == 'status':
             if len(args) not in (0, 1):
-                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS['status'])
+                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sum_cmd])
                 return
 
             # Either infer the match_code if none is given, or use the user-inputted arg
@@ -2380,7 +2380,7 @@ async def vc(ctx, *args):
                     await ctx.channel.send(msg)
                     return
                 elif len(result) >= 2:
-                    msg = f'Usage: {SUB_CMD_USAGE_MSGS["status"]}\n' \
+                    msg = f'Usage: {SUB_CMD_USAGE_MSGS[sub_cmd]}\n' \
                           'You are playing in more than one Vote Chess match, so a match code must be specified.' \
                           '\n\n**Your active Vote Chess matches**'
                     for match_code, match_name in result:
@@ -2745,14 +2745,14 @@ async def vc(ctx, *args):
                     await ctx.channel.send('There was a database error :(')
                     return
                 if not result:
-                    msg = f'Usage: {SUB_CMD_USAGE_MSGS["remind"]}\n' \
+                    msg = f'Usage: {SUB_CMD_USAGE_MSGS[sub_cmd]}\n' \
                           f'You have not joined any Vote Chess matches. You can only use `/vc remind` for your own ' \
                           f'active matches.'
 
                     await ctx.channel.send(msg)
                     return
                 elif len(result) >= 2:
-                    msg = f'Usage: {SUB_CMD_USAGE_MSGS["status"]}\n' \
+                    msg = f'Usage: {SUB_CMD_USAGE_MSGS[sub_cmd]}\n' \
                           'You are playing in more than one Vote Chess match, so a match code must be specified.' \
                           '\n\n**Your active Vote Chess matches**'
                     for match_code, match_name in result:
@@ -2862,7 +2862,7 @@ async def vc(ctx, *args):
             await ctx.channel.send('Not yet implemented!')
         elif sub_cmd == 'help':
             if len(args) != 1:
-                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS['help'])
+                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[sub_cmd])
             help_sub_cmd = args[0].lower()
 
             if help_sub_cmd == 'all':
