@@ -374,7 +374,7 @@ async def add(ctx, *args):
         args = [args[0], 'lichess']
 
     if len(args) != 2 or args[1].lower() not in ('lichess', 'chess.com'):
-        await ctx.channel.send('Usage: `/add <username> [lichess/chess.com]`')
+        await ctx.channel.send('Usage: `/add <username> [lichess|chess.com]`')
         return
 
     # Get given username and site the username applies to
@@ -414,10 +414,10 @@ async def add(ctx, *args):
 @bot.command(brief='Remove a username from names in /show')
 async def remove(ctx, *args):
     if len(args) == 2 and args[1].lower() not in ('lichess', 'chess.com'):
-        await ctx.channel.send('Usage: `/remove <username> [lichess/chess.com]`')
+        await ctx.channel.send('Usage: `/remove <username> [lichess|chess.com]`')
         return
     elif len(args) not in (1, 2):
-        await ctx.channel.send('Usage: `/remove <username> [lichess/chess.com]`')
+        await ctx.channel.send('Usage: `/remove <username> [lichess|chess.com]`')
         return
 
     # Get username and site the username applies to (if given)
