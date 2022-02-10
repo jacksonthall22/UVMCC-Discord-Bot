@@ -941,10 +941,9 @@ async def vc(ctx, *args):
         'help': '`/vc help <sub-command>|all`\n'
                 '> Show a help message explaining the sub-command, or all sub-commands using `/vc help all`'
     })
-    USAGE_MSG_SHORT = f'Usage: `/vc {"|".join(cmd for cmd in SUB_CMD_USAGE_MSGS)}`\n' \
-                      f'Call a sub-command without anything after (ex. just `/vc create`) to get a help message for ' \
-                      f'that command, or use `/vc help all` to show a message describing all of `/vc`\'s sub-commands ' \
-                      f'and their usages.'
+    USAGE_MSG_SHORT = f'Usage: `/vc {"|".join(cmd for cmd in SUB_CMD_USAGE_MSGS)}`\n\n' \
+                      f'Use `/vc help <sub-command>|all` for help with a particular command or to show a message ' \
+                      f'describing all sub-commands and their usages.'
 
     async with ctx.channel.typing():
         # Validate command usage
