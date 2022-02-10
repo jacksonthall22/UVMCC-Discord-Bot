@@ -2900,5 +2900,8 @@ async def vc(ctx, *args):
             else:
                 if help_sub_cmd not in SUB_CMD_USAGE_MSGS:
                     await ctx.channel.send(f'Invalid sub-command "{help_sub_cmd}". Check the spelling and try again.')
+                    return
+
+                await ctx.channel.send('Usage: ' + SUB_CMD_USAGE_MSGS[help_sub_cmd])
 
 bot.run(TOKEN)
