@@ -1584,7 +1584,7 @@ async def vc(ctx, *args):
 
             ''' Validate that status for given match_code is "In Progress" '''
             match_name, pgn, status, hide_votes = result[0]
-            hide_votes = hide_votes == 'TRUE'
+            hide_votes = bool(hide_votes)
 
             current_board = get_current_board(pgn=pgn)
             current_fen = current_board.fen()
