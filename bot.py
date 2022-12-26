@@ -54,7 +54,7 @@ async def mtest(ctx, *args):
 
 def log(s, filename=LOG_FILENAME):
     with open(filename, 'a') as f:
-        f.write(f'{str(datetime.datetime.now())} {s}'.strip() + '\n')
+        f.write(f'{datetime.datetime.now()} {s}'.strip() + '\n')
 
 
 def db_query(db_name: str,
@@ -106,11 +106,12 @@ def db_query(db_name: str,
     log_str = f'db_query(db_name={db_name},query={query},params={params}) called'
     if exit_code == 0:
         if DEBUG and VERBOSE:
-            print(f'Query succeeded: `{query}` in database `{db_name}` with params {params}')
+            print(f'{datetime.datetime.now()} Query succeeded: `{query}` in database `{db_name}` with params {params}')
         log_str += '\nQuery succeeded'
     else:
         if DEBUG:
-            print(f'-----> QUERY FAILED: `{query}` with params {params} in database {db_name}')
+            print(f'{datetime.datetime.now()} -----> QUERY FAILED: `{query}` with params {params} in database'
+                  f' {db_name}')
             print(f'Stack trace:\n{err}')
         log_str += f'\nQuery failed with exit code 1. Stack trace:\n{err}'
 
@@ -245,28 +246,10 @@ async def on_ready():
     if LOG:
         log(logged_in)
 
-    RESET_VOTE_CHESS_TABLES = False
-    if RESET_VOTE_CHESS_TABLES:
-        print('==================')
-        print('DELETING & RESETTING VOTE CHESS TABLES')
-
-        DROP_QUERIES = [
-            'DROP TABLE VoteMatches',
-            'DROP TABLE VoteMatchPairings',
-            'DROP TABLE VoteMatchVotes',
-            'DROP TABLE VoteMatchDrawOffers',
-            'DROP TABLE MatchStatuses',
-            'DROP TABLE MatchSides',
-            'DROP TABLE MatchResults',
-            'DROP TABLE MatchTerminations',
-        ]
-        for q in DROP_QUERIES:
-            db_query(DB_FILENAME, q)
-        print('DONE')
-        print('==================')
-
     # User info
-    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS DiscordUsers (discord_id TEXT PRIMARY KEY)')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS DiscordUsers '
+                          '(discord_id TEXT PRIMARY KEY, '
+                          'id_num TEXT NOT NULL)')
     db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS ChessSites (site TEXT PRIMARY KEY COLLATE NOCASE)')
     db_query(DB_FILENAME, 'INSERT OR IGNORE INTO ChessSites(site) VALUES ("lichess.org"), ("chess.com")')
     db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS ChessUsernames '
@@ -275,6 +258,7 @@ async def on_ready():
                           'site TEXT, '
                           'FOREIGN KEY(discord_id) REFERENCES DiscordUsers(discord_id), '
                           'FOREIGN KEY(site) REFERENCES ChessSites(site))')
+
     # Vote Chess tables
     db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS MatchStatuses '
                           '(status TEXT PRIMARY KEY COLLATE NOCASE)')
@@ -357,16 +341,158 @@ async def on_ready():
     print('==================')
 
 
+@bot.command()
+async def vc_reset(ctx):
+    # Set to False to disable entirely
+    ENABLE_RESET = False
+
+    if str(ctx.message.author) != 'Cubigami#3114':
+        await ctx.channel.send('Not authorized!')
+        return
+
+    if not ENABLE_RESET:
+        await ctx.channel.send('`/vc_reset` command is disabled.')
+        return
+
+    # Do the reset
+    DROP_QUERIES = [
+        'DROP TABLE VoteMatches',
+        'DROP TABLE VoteMatchPairings',
+        'DROP TABLE VoteMatchVotes',
+        'DROP TABLE VoteMatchDrawOffers',
+        'DROP TABLE MatchStatuses',
+        'DROP TABLE MatchSides',
+        'DROP TABLE MatchResults',
+        'DROP TABLE MatchTerminations',
+    ]
+    print('==================')
+    print('DELETING VOTE CHESS TABLES')
+    for q in DROP_QUERIES:
+        db_query(DB_FILENAME, q)
+    print('DONE')
+    print('------------------')
+    print('RECREATING VOTE CHESS TABLES')
+    # Vote Chess tables
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS MatchStatuses '
+                          '(status TEXT PRIMARY KEY COLLATE NOCASE)')
+    db_query(DB_FILENAME, 'INSERT OR IGNORE INTO MatchStatuses(status) VALUES '
+                          '("Not Started"), '
+                          '("Aborted"), '
+                          '("In Progress"), '
+                          '("Abandoned"), '
+                          '("Complete")')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS MatchSides '
+                          '(side TEXT PRIMARY KEY COLLATE NOCASE)')
+    db_query(DB_FILENAME, 'INSERT OR IGNORE INTO MatchSides(side) VALUES '
+                          '("Black"), '
+                          '("White"), '
+                          '("Both"), '
+                          '("random")')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS MatchResults '
+                          '(result TEXT PRIMARY KEY COLLATE NOCASE)')
+    db_query(DB_FILENAME, 'INSERT OR IGNORE INTO MatchResults(result) VALUES '
+                          '("checkmate"), '
+                          '("resignation"), '
+                          '("abandonment"), '
+                          '("stalemate"), '
+                          '("repetition"), '
+                          '("mutual agreement"), '
+                          '("50-move rule"), '
+                          '("unknown")')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS MatchTerminations '
+                          '(termination TEXT PRIMARY KEY COLLATE NOCASE)')
+    db_query(DB_FILENAME, 'INSERT OR IGNORE INTO MatchTerminations VALUES '
+                          '("1-0"), '
+                          '("0-1"), '
+                          '("1/2-1/2"), '
+                          '("*")')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS VoteMatches '
+                          '(match_code TEXT PRIMARY KEY, '
+                          'match_name TEXT, '
+                          'pgn TEXT, '
+                          'starting_fen TEXT NOT NULL '
+                          '             DEFAULT "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",'
+                          'status TEXT NOT NULL, '
+                          'hours_between_moves INTEGER DEFAULT 1 NOT NULL, '
+                          'last_move_unix_time INTEGER, '
+                          'unix_time_created INTEGER NOT NULL, '
+                          'unix_time_started INTEGER, '
+                          'unix_time_ended INTEGER, '
+                          'result TEXT DEFAULT NULL, '
+                          'termination TEXT NOT NULL DEFAULT "*", '
+                          'hide_votes INTEGER NOT NULL DEFAULT 1, '  # 1 == TRUE
+                          'FOREIGN KEY(status) REFERENCES MatchStatuses(status), '
+                          'FOREIGN KEY(result) REFERENCES MatchResults(result), '
+                          'FOREIGN KEY(termination) REFERENCES MatchTerminations(termination))')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS VoteMatchPairings '
+                          '(match_code TEXT NOT NULL, '
+                          'discord_id TEXT NOT NULL, '
+                          'side TEXT NOT NULL, '
+                          'votes_cast INTEGER DEFAULT 0, '
+                          'top_move_votes_cast INTEGER DEFAULT 0, '
+                          'FOREIGN KEY(match_code) REFERENCES VoteMatches(match_code), '
+                          'FOREIGN KEY(discord_id) REFERENCES DiscordUsers(discord_id), '
+                          'PRIMARY KEY(match_code, discord_id), '
+                          'FOREIGN KEY(side) REFERENCES MatchSides(side))')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS VoteMatchVotes '
+                          '(match_code TEXT NOT NULL, '
+                          'discord_id TEXT NOT NULL, '
+                          'ply_count INTEGER NOT NULL DEFAULT 0, '
+                          'vote TEXT, '
+                          'voted_resign INTEGER NOT NULL DEFAULT 0, '
+                          'voted_draw INTEGER NOT NULL DEFAULT 0, '
+                          'FOREIGN KEY(match_code, discord_id)'
+                          ' REFERENCES VoteMatchPlies(match_code, discord_id),'
+                          'PRIMARY KEY(match_code, discord_id, ply_count))')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS VoteMatchDrawOffers '
+                          '(match_code TEXT NOT NULL, '
+                          'ply_count INTEGER NOT NULL, '
+                          'voted_draw INTEGER NOT NULL, '
+                          'FOREIGN KEY(match_code) REFERENCES VoteMatches(match_code), '
+                          'PRIMARY KEY(match_code, ply_count))')
+    print('DONE')
+    print('==================')
+
+    await ctx.channel.send('Reset all vote chess tables.')
+
+
+@bot.command()
+async def update_tables(ctx):
+    # Set to False to disable entirely
+    ENABLE_UPDATE = True
+
+    if str(ctx.message.author) != 'Cubigami#3114':
+        await ctx.channel.send('Not authorized!')
+        return
+
+    if not ENABLE_UPDATE:
+        await ctx.channel.send('`/update_tables` command is disabled.')
+        return
+
+    code, _ = db_query(DB_FILENAME, 'ALTER TABLE DiscordUsers ADD COLUMN id_num TEXT')
+    if code != 0:
+        await ctx.channel.send('There was a database error :(')
+
+    await ctx.channel.send('Updated tables!')
+
+
 @bot.command(brief='Says hello')
 async def hello(ctx):
+    if str(ctx.message.author) != 'Cubigami#3114':
+        await ctx.channel.send(f'Hello, {ctx.message.author.mention}!')
+        return
+
     # import time
-    msg = await ctx.channel.send('Hello!')
-    # embed = discord.Embed(title="Sample Embed", url="https://realdrewdata.medium.com/",
-    #                       description="This is an embed that will show how to build an embed and the different components",
-    #                       color=0xFF5733)
-    # await ctx.send(embed=embed)
+    msg = await ctx.channel.send(f'Hello {ctx.message.author.mention}!')
+    await ctx.channel.send(f'Hello @{ctx.message.author.name}#{ctx.message.author.discriminator}')
+    await ctx.channel.send(f'Sqlite version: {sqlite3.sqlite_version}')
+    embed = discord.Embed(title='Sample Embed', url='https://realdrewdata.medium.com/',
+                          description=f'This is an embed that will show how to build an embed '
+                                      f'and the different components. {ctx.message.author.mention}',
+                          color=0xFF5733)
+    await ctx.send(embed=embed)
     if VERBOSE:
-        print('`hello()` run!')
+        print(f'Hello {ctx.message.author.mention}!')
     # time.sleep(5)
     # await msg.edit(content='Hello! (test)')
 
@@ -396,20 +522,25 @@ async def add(ctx, *args):
         username_proper_caps = response[0]['name']
 
         # Execute insertion
-        db_query(DB_FILENAME,
-                 'INSERT INTO DiscordUsers(discord_id) VALUES (?)',
-                 params=(str(ctx.message.author),))
-        code, _ = db_query(DB_FILENAME,
-                           'INSERT INTO ChessUsernames(username, site) VALUES (?, "lichess.org")',
+        code, _ = db_query(DB_FILENAME, 'REPLACE INTO DiscordUsers(discord_id, id_num) '
+                                        'VALUES (?, ?)',
+                           params=(str(ctx.message.author), str(ctx.message.author.mention)))
+        if code != 0:
+            await ctx.channel.send('There was a database error :(')
+            return
+        code, _ = db_query(DB_FILENAME, 'INSERT INTO ChessUsernames(username, site) '
+                                        'VALUES (?, "lichess.org")',
                            params=(username_proper_caps,))
-        if code == 0:
-            await ctx.channel.send(f'Added `{username_proper_caps}` (Lichess) to the database. '
-                                   f'Use `/show` to see who\'s online!')
-        elif code == 2:
+        if code == 2:
             await ctx.channel.send('That name is already in the Lichess database!')
-        else:
+            return
+        elif code != 0:
             await ctx.channel.send('There was an error inserting your username into the database. '
                                    'DM @Cubigami and it can be added manually.')
+            return
+
+        await ctx.channel.send(f'Added `{username_proper_caps}` (Lichess) to the database. '
+                               f'Use `/show` to see who\'s online!')
     elif site == 'chess.com':
         await ctx.channel.send('Chess.com is not currently supported, but it will be soon!')
 
@@ -446,7 +577,9 @@ async def remove(ctx, *args):
         if site == 'lichess':
             queried_site = 'lichess.org'
         code, result = db_query(DB_FILENAME,
-                                'SELECT username FROM ChessUsernames WHERE username LIKE ? AND site LIKE ?',
+                                'SELECT username FROM ChessUsernames '
+                                'WHERE username LIKE ? '
+                                '      AND site LIKE ?',
                                 params=(username, queried_site))
         if code != 0:
             await ctx.channel.send('There was a database error :(')
@@ -459,7 +592,9 @@ async def remove(ctx, *args):
         else:
             # Remove the username
             username_proper_caps, = result[0]
-            code, result = db_query(DB_FILENAME, 'DELETE FROM ChessUsernames WHERE username = ? AND site = ?',
+            code, result = db_query(DB_FILENAME, 'DELETE FROM ChessUsernames '
+                                                 'WHERE username = ? '
+                                                 '      AND site = ?',
                                     params=(username_proper_caps, queried_site))
             if code != 0:
                 await ctx.channel.send('There was a database error :(')
@@ -508,7 +643,7 @@ async def iam(ctx, *args):
             await ctx.channel.send('There was a database error :(')
             return
 
-        await ctx.channel.send(f'Linked `{username}` to `{discord_id}`. Use `/show` to see your status!')
+        await ctx.channel.send(f'Linked `{username}` to `{discord_id}`. Use `/show me` to see your status!')
 
 
 @bot.command(brief='Unlink your Discord account from a Lichess username.')
@@ -1539,6 +1674,8 @@ async def vc(ctx, *args):
                     # If move is "resign" or "draw", this can be a vote in all active games
                     valid_match_codes = [e for e, _, _ in results]
 
+                    # TODO query for matches where it's user to move before sending the msg below
+
                     if len(valid_match_codes) >= 2:
                         msg = f'Please use one of these commands:'
                         for valid_match_code in valid_match_codes:
@@ -2182,12 +2319,24 @@ async def vc(ctx, *args):
                         return
 
                     ''' Add variation to the match's PGN and update it in the database '''
+                    print('=========\ntest: game before:')
+                    print(game)
                     current_board = get_current_board(game=game)
-                    get_last_node(game=game).add_variation(current_board.parse_san(top_voted_move_san))
+                    get_last_node(game=game).add_line((current_board.parse_san(top_voted_move_san),))
+                    print('=========\ntest: game before:')
+                    print(game)
+                    # get_last_node(game=game).add_variation(current_board.parse_san(top_voted_move_san))
                     orientation = get_turn(board=current_board, as_str=True)
                     current_board.push_san(top_voted_move_san)
                     current_fen = current_board.fen()
                     last_move = get_last_move(game=game, format='uci')
+
+                    code, _ = db_query(DB_FILENAME, 'UPDATE VoteMatches SET pgn = ? '
+                                                    'WHERE match_code LIKE ?',
+                                       params=(str(game), match_code))
+                    if code != 0:
+                        await ctx.channel.send('There was a database error :(')
+                        return
 
                     ''' Handle current_board being in checkmate/stalemate etc. (end the match) '''
                     game_ended = False
@@ -2255,13 +2404,6 @@ async def vc(ctx, *args):
                                 await ctx.channel.send('There was a database error :(')
                                 return
                         game_ended = True
-
-                    code, _ = db_query(DB_FILENAME, 'UPDATE VoteMatches SET pgn = ? '
-                                                    'WHERE match_code LIKE ?',
-                                       params=(str(game), match_code))
-                    if code != 0:
-                        await ctx.channel.send('There was a database error :(')
-                        return
 
                     ''' See whether draw was offered at this ply (but not on the previous ply) '''
                     code, result = db_query(DB_FILENAME, 'SELECT * FROM VoteMatchDrawOffers '
@@ -2378,6 +2520,7 @@ async def vc(ctx, *args):
                         s = f'**{move}**:'
                         for player in players:
                             s += f'\n> {player}'
+                        groups.append(s)
                     e.add_field(name='Votes', value=msg + '\n'.join(groups), inline=False)
                     e.set_footer(text=EMBED_FOOTER)
                     await ctx.channel.send(embed=e)
@@ -2882,13 +3025,19 @@ async def vc(ctx, *args):
             current_ply = current_board.ply()
 
             # Get all players on the match's side to move that have not yet voted
-            code, result = db_query(DB_FILENAME, 'SELECT discord_id FROM VoteMatchPairings '
-                                                 'WHERE match_code LIKE ? '
-                                                 'AND side IN (?, "Both") '
-                                                 'AND discord_id NOT IN (SELECT discord_id FROM VoteMatchVotes '
-                                                 '                       WHERE match_code LIKE ? '
-                                                 '                             AND ply_count = ? '
-                                                 '                             AND vote IS NOT NULL)',
+            code, result = db_query(DB_FILENAME,
+                                    'SELECT id_num FROM DiscordUsers '
+                                    'WHERE discord_id IN ('
+                                    '      SELECT discord_id FROM VoteMatchPairings '
+                                    '      WHERE match_code LIKE ? '
+                                    '            AND side IN (?, "Both") '
+                                    '            AND discord_id NOT IN ('
+                                    '                SELECT discord_id FROM VoteMatchVotes '
+                                    '                WHERE match_code LIKE ? '
+                                    '                      AND ply_count = ? '
+                                    '                      AND vote IS NOT NULL'
+                                    '                )'
+                                    '      )',
                                     params=(match_code, orientation.capitalize(), match_code, current_ply))
             if code != 0:
                 await ctx.channel.send('There was a database error :(')
@@ -2899,7 +3048,7 @@ async def vc(ctx, *args):
                                        f'This should never happen since votes are tallied as soon as all players '
                                        f'have voted.')
                 return
-            discord_ids = [discord_id for discord_id, in result]
+            mention_strs = [f'{id_num}' for id_num, in result]
 
             ''' Create Embed message '''
             e = discord.Embed(title=f'Reminder: Cast Your Vote in Match `{match_code}`: "**{match_name}**"',
@@ -2907,8 +3056,8 @@ async def vc(ctx, *args):
             e.set_author(name=bot.user.name,
                          url=LINK_TO_CODE,
                          icon_url=bot.user.avatar_url)
-            lines = [f'@{p}' for p in discord_ids]
-            e.add_field(name='Waiting on votes from:', value='\n'.join(lines))
+            e.add_field(name='Waiting on votes from:', value=('\n'.join(mention_strs) if mention_strs
+                                                              else 'No players (everyone voted)'))
             e.set_footer(text=EMBED_FOOTER)
             await ctx.channel.send(embed=e)
         elif sub_cmd == 'settings':
