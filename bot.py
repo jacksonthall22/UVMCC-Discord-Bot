@@ -9,18 +9,31 @@ import requests
 import json
 import datetime
 import sqlite3
+
 import discord
 from discord.ext import commands
+# from discord_py.discord.ext import commands
+# from discord.ext import commands
+
 from dotenv import load_dotenv
 import random
 import time
 from collections import defaultdict, OrderedDict, Counter
+
+
+# https://github.com/realhardik18/discord.py-voice-recorder/blob/main/main.py
+# import discord
+# from discord.ext import commands
+# from discord.ext.audiorec import NativeVoiceClient  # important!
+# import random
+
 
 from icecream import ic
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 bot = commands.Bot(command_prefix='/')
+
 
 LINK_TO_CODE = 'https://github.com/jacksonthall22/UVMCC-Discord-Bot'
 DB_FILENAME = 'users.db'
@@ -30,6 +43,13 @@ EMBED_FOOTER = '♟  I\'m a bot, beep boop  ♟  Click my icon for the code  ♟
 DEBUG = True
 VERBOSE = True  # Shows more debug info, ex. for successful DB queries
 LOG = True
+
+SERVER_ID = 811643019022827530
+BOT_MEMBER_ID = 828653068245008385
+BLINDFOLD_CHESS_VC_ID = 1051686335766868048
+BFC_AUDIO_DIR = 'bfc-audio'
+
+client = discord.Client()
 
 
 ''' ========== Extra Functions ========== '''
@@ -337,8 +357,133 @@ async def on_ready():
                           'voted_draw INTEGER NOT NULL, '
                           'FOREIGN KEY(match_code) REFERENCES VoteMatches(match_code), '
                           'PRIMARY KEY(match_code, ply_count))')
+
+
+    # Blindfold Chess games
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS BlindfoldGames '
+                          '(match_code TEXT NOT NULL PRIMARY KEY,'
+                          'white_discord_id TEXT NOT NULL,'
+                          'black_discord_id TEXT NOT NULL,'
+                          'pgn TEXT NOT NULL,'
+                          'status TEXT NOT NULL,'
+                          'FOREIGN KEY(white_discord_id) REFERENCES DiscordUsers(discord_id),'
+                          'FOREIGN KEY(black_discord_id) REFERENCES DiscordUsers(discord_id),'
+                          'FOREIGN KEY (status) REFERENCES MatchStatuses)')
+    db_query(DB_FILENAME, 'CREATE TABLE IF NOT EXISTS ActiveBlindfoldGame '
+                          '(discord_id TEXT NOT NULL PRIMARY KEY,'
+                          'match_code TEXT,'
+                          'FOREIGN KEY(discord_id) REFERENCES DiscordUsers(discord_id),'
+                          'FOREIGN KEY(match_code) REFERENCES BlindfoldGames(match_code))')
+
     print('Finished on_ready()')
     print('==================')
+
+
+@bot.command()
+async def join(ctx: commands.Context):
+    """
+    https://github.com/realhardik18/discord.py-voice-recorder/blob/main/main.py
+    """
+    if ctx.author.voice is None:
+        await ctx.channel.send(f'Not connected to a voice channel. Please join <#{BLINDFOLD_CHESS_VC_ID}> first.')
+        return
+
+    # We have to move both the user and the bot separately. Send a message only if either moved
+    user_moved = False
+    bot_moved = False
+
+    channel = bot.get_channel(BLINDFOLD_CHESS_VC_ID)
+
+    # User
+    if ctx.author.voice.channel.id != BLINDFOLD_CHESS_VC_ID:
+        await ctx.author.move_to(channel)
+        user_moved = True
+
+    # Bot
+    try:
+        # But if this is called while bot is in the blindfold-chess VC and
+        # the user is in a different VC, throws an error for some reason
+        await channel.connect(cls=NativeVoiceClient)
+        bot_moved = True
+    except discord.errors.ClientException:
+        pass
+
+    if bot_moved or user_moved:
+        await ctx.channel.send(f'Joined <#{BLINDFOLD_CHESS_VC_ID}>.')
+    else:
+        await ctx.channel.send(f'Already in <#{BLINDFOLD_CHESS_VC_ID}>')
+
+
+@bot.command()
+async def rec(ctx: commands.Context):
+    """ https://github.com/realhardik18/discord.py-voice-recorder/blob/main/main.py """
+    if ctx.author.voice is None:
+        await ctx.channel.send(f'You are not connected to a voice channel. '
+                               f'Please join <#{BLINDFOLD_CHESS_VC_ID}> first.')
+        return
+    elif ctx.voice_client is None:
+        await ctx.channel.send(f'<@{BOT_MEMBER_ID}> is not connected to your voice channel. '
+                               f'Please call `/join` first.')
+        return
+
+    ctx.voice_client.record(lambda e: print(f'Exception: {e}'))
+    embedVar = discord.Embed(title='Started the recording!',
+                             description='Use `/stop` to stop',
+                             color=0x546e7a)
+    await ctx.send(embed=embedVar)
+
+
+@bot.command()
+async def stop(ctx: commands.Context):
+    """ https://github.com/realhardik18/discord.py-voice-recorder/blob/main/main.py """
+    if not ctx.voice_client.is_recording():
+        await ctx.channel.send('No recording in progress.')
+        return
+    await ctx.send('Stopping the recording')
+
+    wav_bytes = await ctx.voice_client.stop_record()
+    await ctx.voice_client.disconnect()
+
+    filename = f'{BFC_AUDIO_DIR}/{time.strftime("%Y%m%d-%H%M%S")}.wav'
+
+    wav_file = discord.File(io.BytesIO(wav_bytes), filename=filename)
+
+    await ctx.send(f'Saved audio to `{wav_file.filename}`.')
+
+
+@bot.command()
+async def leave(ctx: commands.Context):
+    """ https://github.com/realhardik18/discord.py-voice-recorder/blob/main/main.py """
+    if ctx.voice_client is None:
+        await ctx.channel.send('No active voice channel.')
+        return
+    await ctx.voice_client.disconnect()
+    await ctx.channel.send(f'Left <#{BLINDFOLD_CHESS_VC_ID}>.')
+
+
+@bot.command()
+async def bc(ctx: commands.Context, *args):
+    '''
+    Blindfold Chess command
+
+    Example usage:
+
+        /bc @[discord tag 1] @[discord tag 2]
+
+            If there is an existing game that was unfinished:
+
+                Unfinished matches:
+                    - XXXX
+
+    '''
+
+    for arg in args:
+        pass
+
+
+
+
+
 
 
 @bot.command()
@@ -2342,6 +2487,7 @@ async def vc(ctx, *args):
                     game_ended = False
                     if current_board.is_game_over():
                         # Update status/result/termination in database
+                        # TODO Fix UPDATEs below (use WHERE to avoid updating status for every game in db)
                         if current_board.is_checkmate():
                             # Set termination
                             termination = ('1-0', '0-1')[current_board.turn]
